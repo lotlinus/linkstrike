@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: link-strike
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    # ONE worker only: rooms live in memory.
+    startCommand: gunicorn -k geventwebsocket.gunicorn.workers.GeventWebSocketWorker -w 1 -b 0.0.0.0:$PORT app:app
+    healthCheckPath: /healthz
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: SECRET_KEY
+        generateValue: true
+      - key: MIN_TO_START
+        value: "1"
+      # Neon connection string (postgresql://...?sslmode=require). Leave unset to run without rankings.
+      - key: DATABASE_URL
+        sync: false

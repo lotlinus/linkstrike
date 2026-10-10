@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#050914">
+<title>Link Strike</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bungee&family=Barlow+Semi+Condensed:wght@500;600;700&family=Chakra+Petch:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css?v=8">
+<style id="phone-fit">
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+html,body{width:100%;max-width:100%}
+body{overflow-x:hidden}
+
+#home .home-wrap{width:100%;max-width:480px;margin-left:auto;margin-right:auto;padding-left:14px;padding-right:14px;min-width:0}
+#home .topbar,#home .menu,#home .stack{width:100%;max-width:100%;min-width:0}
+#home .hero{display:block;width:100%;max-width:100%;height:auto}
+
+#home .menu>.glow,#home .stack>.glow{display:block;width:100%;max-width:100%;min-width:0}
+#home .frame,#home .mbtn,#home .in{max-width:100%;min-width:0}
+#home .mbtn{width:100%}
+#home .mbtn .tx{min-width:0;flex:1 1 auto}
+#home .mbtn .tx small{white-space:normal;overflow-wrap:anywhere}
+
+#home .field{min-width:0}
+#home .field input{min-width:0;width:100%}
+
+#home .lb-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;min-width:0}
+#home .lb-title{flex:1 1 150px;min-width:0}
+#home .lb-title b{font-size:clamp(13px,4.2vw,18px);overflow-wrap:anywhere}
+#home .lb-all{flex:0 0 auto;margin-left:auto}
+#home .lb-list{min-width:0}
+
+#home .join-row{display:flex;gap:8px;min-width:0}
+#home .join-row input{flex:1 1 auto;min-width:0;width:100%}
+#home .join-row .glow{flex:0 0 auto}
+</style>
+</head>
+<body>
+
+<!-- HOME -->
+<section id="home" class="screen active">
+  <div class="home-wrap">
+
+    <h1 class="sr-only">Link Strike</h1>
+    <img class="hero" src="/static/img/hero.jpg?v=4" alt="Link Strike" width="1024" height="494" draggable="false">
+
+    <div class="menu">
+      <div class="glow blue"><div class="cut frame"><div class="in">
+        <span class="lbl">Username</span>
+        <label class="field" for="nameInput">
+          <svg class="fi" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="7.5" r="4.5" fill="currentColor"/><path d="M3.5 22c0-5.2 3.6-8 8.5-8s8.5 2.8 8.5 8z" fill="currentColor"/></svg>
+          <input id="nameInput" maxlength="12" autocomplete="off" autocapitalize="words" spellcheck="false" placeholder="Player">
+          <svg class="fe" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17.25V21h3.75L17.8 9.94l-3.75-3.75L3 17.25zM20.7 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" fill="currentColor"/></svg>
+        </label>
+      </div></div></div>
+
+      <div class="glow blue"><div class="cut frame"><div class="in">
+        <div class="lb-head">
+          <svg class="lb-trophy" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h10v2h3a1 1 0 0 1 1 1v1.5c0 2.3-1.6 4.2-3.8 4.7A6 6 0 0 1 13 15.9V18h3v3H8v-3h3v-2.1a6 6 0 0 1-4.2-3.7C4.6 11.7 3 9.8 3 7.5V6a1 1 0 0 1 1-1h3V3z" fill="currentColor"/></svg>
+          <div class="lb-title"><b>Global leaderboard</b><small>Top 3 players</small></div>
+          <button id="lbAll" class="lb-all" type="button">View all <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15M13 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        </div>
+        <ol id="lbTop" class="lb-list"><li class="lb-empty">Loading...</li></ol>
+      </div></div></div>
+
+      <div id="inviteBlock" class="stack" hidden>
+        <div class="glow blue"><div class="cut frame"><div class="in">
+          <p class="invite">You're invited to room <strong id="inviteCode"></strong></p>
+        </div></div></div>
+        <div class="glow orange"><button id="acceptBtn" class="cut mbtn orange"><span class="in">
+          <svg class="mi" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z" fill="currentColor"/></svg>
+          <i class="sep"></i>
+          <span class="tx"><b>Join room</b><small>You were invited by a friend</small></span>
+          <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4l8 8-8 8" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span></button></div>
+        <button id="ownRoomBtn" class="linkbtn">Make my own room instead</button>
+      </div>
+
+      <div id="mainBlock" class="stack">
+        <div class="glow blue"><div class="cut frame"><div class="in">
+          <span class="lbl">Room name <span class="opt">(optional)</span></span>
+          <label class="field" for="roomNameInput">
+            <svg class="fi" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9h14M5 15h14M10 4L8 20M16 4l-2 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+            <input id="roomNameInput" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Random code if empty">
+          </label>
+          <p class="rn-hint">Pick a name your friends can remember. It's yours to reuse any time.</p>
+        </div></div></div>
+
+        <div class="glow orange"><button id="createBtn" class="cut mbtn orange"><span class="in">
+          <svg class="mi" viewBox="0 0 32 24" aria-hidden="true"><circle cx="16" cy="7" r="5" fill="currentColor"/><path d="M6.5 22c0-5.5 4-8.5 9.5-8.5s9.5 3 9.5 8.5z" fill="currentColor"/><circle cx="5" cy="9" r="3.2" fill="currentColor"/><path d="M0 21c0-4 2-6.5 5.5-6.5 1 0 1.8.2 2.5.5-1.6 1.4-2.4 3.4-2.5 6z" fill="currentColor"/><circle cx="27" cy="9" r="3.2" fill="currentColor"/><path d="M32 21c0-4-2-6.5-5.5-6.5-1 0-1.8.2-2.5.5 1.6 1.4 2.4 3.4 2.5 6z" fill="currentColor"/></svg>
+          <i class="sep"></i>
+          <span class="tx"><b>Create room</b><small>Play with friends &middot; 6 in Solo, up to 12 in Teams</small></span>
+          <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4l8 8-8 8" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span></button></div>
+
+        <div class="glow blue"><div class="cut frame"><div class="in">
+          <div class="jt">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z" fill="currentColor"/></svg>
+            <span>Join a room</span>
+          </div>
+          <div class="join-row">
+            <input id="codeInput" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Enter room code or name...">
+            <div class="glow blue"><button id="joinBtn" class="cut jbtn" style="--c:9px;--t:2px"><span class="in">Join
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4l8 8-8 8" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </span></button></div>
+          </div>
+        </div></div></div>
+      </div>
+    </div>
+
+    <footer class="ver"><span>v0.8.0 &bull; Alpha</span></footer>
+  </div>
+</section>
+
+<!-- LOBBY -->
+<section id="lobby" class="screen">
+  <div class="lobby-wrap">
+    <div class="card code-card">
+      <span class="label">Room code</span>
+      <button id="codeBtn" class="code" aria-label="Copy room code"></button>
+      <button id="shareBtn" class="btn primary">Share invite link</button>
+      <p class="hint" id="shareHint">Friends who open the link land right here.</p>
+    </div>
+    <div class="card players-card">
+      <div class="players-head">
+        <h2>Players</h2>
+        <span id="playerCount" class="count"></span>
+      </div>
+      <ul id="playerList"></ul>
+      <div id="modeBox" class="modebox">
+        <span class="label">Game mode</span>
+        <div class="modes">
+          <button id="modeSolo" class="mode" type="button" data-mode="solo"><b>Solo Battle</b><small>Every player for themselves. First to 10 kills wins.</small></button>
+          <button id="modeTeam" class="mode" type="button" data-mode="team"><b>Team Multiplayer</b><small>Survivors vs Hunters, up to 12 players. Get eliminated and you join your killer's team. Most players after 6 minutes wins.</small></button>
+        </div>
+      </div>
+      <button id="startBtn" class="btn primary" hidden>Start match</button>
+      <p id="waitMsg" class="hint" hidden>Waiting for the host to start.</p>
+      <button id="leaveLobbyBtn" class="btn ghost small">Leave room</button>
+    </div>
+  </div>
+</section>
+
+<!-- GAME -->
+<section id="game" class="screen">
+  <canvas id="canvas"></canvas>
+
+  <div id="stickZone" class="touch zone zone-l"><div id="stickBase" class="pad"><div id="knob" class="knob"></div></div></div>
+  <div id="aimZone" class="touch zone zone-r"><div id="aimBase" class="pad aim"><div id="aimKnob" class="knob"></div></div></div>
+
+  <div class="hud">
+    <div class="hud-left">
+      <div class="hp"><div id="hpFill"></div><span id="hpText">100</span></div>
+      <div id="wpnText">Pistol</div>
+    </div>
+    <div class="hud-mid">
+      <span id="hudRoom"></span>
+      <span id="hudPing">-- ms</span>
+      <button id="sndBtn" class="hud-btn" aria-label="Sound on or off">Sound</button>
+      <button id="fsBtn" class="hud-btn" aria-label="Fullscreen">Full</button>
+      <button id="exitBtn" class="hud-btn" aria-label="Leave match">Exit</button>
+    </div>
+    <div class="hud-right">
+      <ol id="board"></ol>
+      <div id="feed"></div>
+    </div>
+    <div id="teamBar" class="teambar" hidden></div>
+    <div id="banner" class="banner" hidden></div>
+  </div>
+
+  <div id="over" class="over" hidden>
+    <div class="card over-card">
+      <h2 id="overTitle"></h2>
+      <p id="overSub" class="over-sub" hidden></p>
+      <ol id="overBoard"></ol>
+      <button id="againBtn" class="btn primary" hidden>Play again</button>
+      <p id="againWait" class="hint" hidden>Waiting for the host to start a new match.</p>
+      <button id="overLeave" class="btn ghost small">Leave room</button>
+    </div>
+  </div>
+
+  <div class="rotate"><p>Rotate your phone screen to play</p></div>
+</section>
+
+<!-- LEADERBOARD SHEET -->
+<div id="lbSheet" class="lb-sheet" hidden role="dialog" aria-modal="true" aria-label="Global leaderboard">
+  <div class="glow blue"><div class="cut frame lb-panel"><div class="in">
+    <div class="lb-head">
+      <svg class="lb-trophy" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h10v2h3a1 1 0 0 1 1 1v1.5c0 2.3-1.6 4.2-3.8 4.7A6 6 0 0 1 13 15.9V18h3v3H8v-3h3v-2.1a6 6 0 0 1-4.2-3.7C4.6 11.7 3 9.8 3 7.5V6a1 1 0 0 1 1-1h3V3z" fill="currentColor"/></svg>
+      <div class="lb-title"><b>Global leaderboard</b><small>Top 20 &middot; total kills</small></div>
+      <button id="lbClose" class="lb-all" type="button">Close</button>
+    </div>
+    <ol id="lbFull" class="lb-list lb-scroll"></ol>
+    <div id="lbMe" class="lb-me"></div>
+  </div></div></div>
+</div>
+
+<div id="conn" class="conn">Connecting...</div>
+<div id="toast" class="toast" role="status"></div>
+
+<script>window.ROOM_CODE = "{{ room_code }}";</script>
+<script src="/static/socket.io.min.js" onerror="this.onerror=null;var s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js';s.onerror=function(){var t=document.createElement('script');t.src='https://cdn.jsdelivr.net/npm/socket.io-client@4.7.5/dist/socket.io.min.js';document.head.appendChild(t)};document.head.appendChild(s)"></script>
+<script src="/static/skins.js?v=3"></script>
+<script src="/static/game.js?v=13"></script>
+</body>
+</html>
