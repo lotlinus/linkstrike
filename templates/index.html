@@ -131,6 +131,13 @@ body{overflow-x:hidden}
         <span id="playerCount" class="count"></span>
       </div>
       <ul id="playerList"></ul>
+      <div id="mapBox" class="modebox">
+        <span class="label">Map</span>
+        <div class="modes">
+          <button id="mapLab" class="mode" type="button" data-map="lab"><b>Laboratory</b><small>A reactor chamber with catwalks all around it.</small></button>
+          <button id="mapStreet" class="mode" type="button" data-map="street"><b>Street</b><small>Rooftops, kiosks and a sewer under the road.</small></button>
+        </div>
+      </div>
       <div id="modeBox" class="modebox">
         <span class="label">Game mode</span>
         <div class="modes">
@@ -205,6 +212,6 @@ body{overflow-x:hidden}
 <script>window.ROOM_CODE = "{{ room_code }}";</script>
 <script src="/static/socket.io.min.js" onerror="this.onerror=null;var s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js';s.onerror=function(){var t=document.createElement('script');t.src='https://cdn.jsdelivr.net/npm/socket.io-client@4.7.5/dist/socket.io.min.js';document.head.appendChild(t)};document.head.appendChild(s)"></script>
 <script src="/static/skins.js?v=3"></script>
-<script src="/static/game.js?v=13"></script>
+<script src="/static/game.js?v=15"></script>
 </body>
 </html>
