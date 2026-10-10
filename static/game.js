@@ -51,7 +51,7 @@ function start() {
   }
 
   function myName() {
-    const n = $("nameInput").value.trim() || "Soldier";
+    const n = $("nameInput").value.trim();      // blank is fine: the server hands out Soldier, Soldier 2, ...
     try { localStorage.setItem("ls_name", n); } catch (e) {}
     return n;
   }
@@ -191,6 +191,9 @@ function start() {
   for (const b of document.querySelectorAll("#modeBox .mode")) {
     b.onclick = () => { if (isHost) socket.emit("set_mode", { mode: b.dataset.mode }); };
   }
+  for (const b of document.querySelectorAll("#mapBox .mode")) {
+    b.onclick = () => { if (isHost) socket.emit("set_map", { map: b.dataset.map }); };
+  }
   $("exitBtn").onclick = leaveRoom;
   $("overLeave").onclick = leaveRoom;
   $("againBtn").onclick = () => socket.emit("rematch");
@@ -261,6 +264,9 @@ function start() {
     const lm = lobby.mode || "solo";
     for (const b of document.querySelectorAll("#modeBox .mode")) b.classList.toggle("on", b.dataset.mode === lm);
     $("modeBox").classList.toggle("locked", !isHost);
+    const lmap = lobby.map || "lab";
+    for (const b of document.querySelectorAll("#mapBox .mode")) b.classList.toggle("on", b.dataset.map === lmap);
+    $("mapBox").classList.toggle("locked", !isHost);
     const canStart = lobby.players.length >= lobby.min;
     $("startBtn").hidden = !isHost;
     $("startBtn").disabled = !canStart;
@@ -300,6 +306,7 @@ function start() {
 
   socket.on("start", (d) => {
     world = d.world;
+    loadArt(world);
     snaps = []; evq = []; latest = null;
     pst.clear(); parts.length = 0; expls.length = 0; flashes.length = 0;
     $("over").hidden = true; $("feed").textContent = "";
@@ -731,7 +738,19 @@ function start() {
     "tank_green", "tank_blue", "tank_small", "term_rack", "term_desk", "term_kiosk", "term_arcade", "term_a",
     "light_cyan", "light_amber", "light_red", "pipe_long", "pipe_bundle", "pk_shotgun", "pk_rocket", "pk_health"];
   Promise.all(LAB_FILES.map((n) => loadImg("/static/img/lab/" + n + ".png?v=7").then((im) => { if (im) LAB[n] = im; })))
-    .then(() => { if (tiles) useLabTiles(); });
+    .then(() => { if (tiles && !(world && world.art === "street")) useLabTiles(); });
+
+  // Street art (static/img/street): only the sprites the map's props list asks for
+  const ART = {}, artAsked = new Set();
+  function loadArt(w) {
+    if (!w || w.art !== "street") return;
+    for (const pr of (w.props || [])) {
+      const n = pr[0];
+      if (artAsked.has(n)) continue;
+      artAsked.add(n);
+      loadImg("/static/img/street/" + n + ".png?v=1").then((im) => { if (im) ART[n] = im; });
+    }
+  }
 
   // ------------------------------------------------------------ map art (drawn in code, cached as tiles)
   const T = 40;
@@ -805,7 +824,39 @@ function start() {
       g.fillStyle = "#ffd479"; g.fillRect(14, 2, 12, 4);
       g.fillStyle = "#3a4458"; g.fillRect(12, 0, 16, 2);
     });
-    useLabTiles();
+    if (world && world.art === "street") useStreetTiles(); else useLabTiles();
+  }
+
+  // Street theme: asphalt road on top, wet brick sewer underneath (all drawn in code)
+  function useStreetTiles() {
+    const bricks = (g, base, line, hi) => {
+      g.fillStyle = base; g.fillRect(0, 0, T, T);
+      g.fillStyle = line;
+      for (let y = 0; y < T; y += 10) g.fillRect(0, y, T, 1);
+      for (let y = 0; y < T; y += 10) { const off = (y / 10) % 2 ? 0 : 10; for (let x = off; x < T; x += 20) g.fillRect(x, y, 1, 10); }
+      if (hi) { g.fillStyle = hi; for (let i = 0; i < 5; i++) g.fillRect((i * 13 + 6) % 34, (i * 9 + 3) % 36, 4, 2); }
+    };
+    tiles.steel = [0, 1, 2].map((v) => mk((g) => {                         // boundary walls: concrete block
+      bricks(g, v === 1 ? "#4a4a50" : "#44444b", "#2b2b31", "#5d5d65");
+      g.fillStyle = "#585860"; g.fillRect(0, 0, 2, T);
+    }));
+    tiles.mid = mk((g) => bricks(g, "#3b4352", "#2a313e", "#4a5365"));      // sewer wall block
+    tiles.top = mk((g) => { bricks(g, "#3b4352", "#2a313e", "#4a5365"); g.fillStyle = "#6a7488"; g.fillRect(0, 0, T, 3); g.fillStyle = "#2f7f8a"; g.fillRect(0, 3, T, 2); });
+    tiles.roadMid = mk((g) => {                                              // under the road: packed earth + stone
+      g.fillStyle = "#2c2a2e"; g.fillRect(0, 0, T, T);
+      g.fillStyle = "#38353a"; for (let i = 0; i < 7; i++) g.fillRect((i * 17 + 3) % 34, (i * 11 + 5) % 34, 5, 3);
+      g.fillStyle = "#222024"; g.fillRect(0, T - 3, T, 3);
+    });
+    tiles.road = [0, 1, 2, 3].map((v) => mk((g) => {                         // road surface, lane dashes every other tile
+      g.fillStyle = "#2c2a2e"; g.fillRect(0, 0, T, T);
+      g.fillStyle = "#b9b2a2"; g.fillRect(0, 0, T, 5);                       // pavement edge you stand on
+      g.fillStyle = "#8d877a"; g.fillRect(0, 5, T, 2);
+      g.fillStyle = "#3c3a40"; g.fillRect(0, 7, T, 12);
+      g.fillStyle = "#47444b"; for (let i = 0; i < 4; i++) g.fillRect((i * 19 + v * 7) % 34, 9 + (i * 5) % 8, 5, 2);
+      if (v < 2) { g.fillStyle = "#e6b52a"; g.fillRect(v ? 0 : 8, 25, v ? 32 : 32, 3); }
+      g.fillStyle = "#38353a"; for (let i = 0; i < 5; i++) g.fillRect((i * 13 + 5) % 34, 30 + (i * 3) % 6, 5, 3);
+    }));
+    tiles.bg = [0, 1, 2].map((v) => mk((g) => bricks(g, v === 0 ? "#171e29" : v === 1 ? "#19212d" : "#151b26", "#1d2633", v === 2 ? "#202b3a" : null)));
   }
 
   // swap the drawn tiles for the Laboratory sprites (only the ones that loaded)
@@ -845,10 +896,13 @@ function start() {
 
   function drawSky(cw, ch, sc) {
     const g = ctx.createLinearGradient(0, 0, 0, ch);
-    g.addColorStop(0, "#0b1226"); g.addColorStop(0.55, "#2b2b4e"); g.addColorStop(1, "#9a5646");
+    const sk = world.sky || ["#0b1226", "#2b2b4e", "#9a5646"];
+    g.addColorStop(0, sk[0]); g.addColorStop(0.55, sk[1]); g.addColorStop(1, sk[2]);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = g; ctx.fillRect(0, 0, cw, ch);
-    const layers = [[0.25, "#1f2540", 520], [0.5, "#161b33", 470]];
+    const layers = world.skyline
+      ? [[0.25, world.skyline[0], world.skyline_base[0]], [0.5, world.skyline[1], world.skyline_base[1]]]
+      : [[0.25, "#1f2540", 520], [0.5, "#161b33", 470]];
     for (let l = 0; l < 2; l++) {
       const par = layers[l][0], col = layers[l][1], base = layers[l][2];
       ctx.setTransform(sc, 0, 0, sc, cw / 2 - cam.x * par * sc, ch / 2 - cam.y * par * sc);
@@ -862,15 +916,19 @@ function start() {
 
   // pass 0 = background wall, pass 1 = solid blocks and catwalks (props are drawn between the two)
   function drawTiles(x0, y0, x1, y1, pass) {
-    const grid = world.grid;
+    const grid = world.grid, street = world.art === "street";
     const c0 = clamp(Math.floor(x0 / T), 0, world.cols - 1), c1 = clamp(Math.floor(x1 / T), 0, world.cols - 1);
     const r0 = clamp(Math.floor(y0 / T), 0, world.rows - 1), r1 = clamp(Math.floor(y1 / T), 0, world.rows - 1);
     for (let r = r0; r <= r1; r++) {
       const row = grid[r];
       for (let c = c0; c <= c1; c++) {
         const ch = row[c], x = c * T, y = r * T;
-        const solidCh = ch === "#" || ch === "S" || ch === "C";
+        const solidCh = ch === "#" || ch === "S" || ch === "C" || ch === "B";
         if (pass === 0) {
+          if (street) {                                          // only the underground has a back wall; above the road is sky
+            if (!solidCh && r >= world.street_row && c > 0 && c < world.cols - 1) ctx.drawImage(tiles.bg[hash(c, r) % 3], x, y);
+            continue;
+          }
           if (!solidCh && c > 0 && c < world.cols - 1 && r >= 1) {
             let t = tiles.bg[hash(c, r) % 3];
             if (r % 6 === 2) t = tiles.pipe;
@@ -879,10 +937,14 @@ function start() {
           }
           continue;
         }
-        if (ch === "#") { ctx.drawImage(tiles.steel[hash(c, r) % 3], x, y); continue; }
+        if (ch === "B" || ch === "-") continue;                  // building bodies and sprite platforms: the props are the art
+        if (ch === "#") { if (!(street && r === 0)) ctx.drawImage(tiles.steel[hash(c, r) % 3], x, y); continue; }
         if (ch === "S") {
           const above = r > 0 ? grid[r - 1][c] : "#";
-          ctx.drawImage(above === "#" || above === "S" || above === "C" ? tiles.mid : tiles.top, x, y);
+          const covered = above === "#" || above === "S" || above === "C" || above === "B";
+          if (street && (r === world.street_row || r === world.street_row + 1)) {
+            ctx.drawImage(covered ? tiles.roadMid : tiles.road[c % 4], x, y);
+          } else ctx.drawImage(covered ? tiles.mid : tiles.top, x, y);
           continue;
         }
         if (ch === "C") { ctx.drawImage(tiles.crate, x, y); continue; }
@@ -900,14 +962,23 @@ function start() {
   // decoration: tanks, terminals, pipes, lights (no collision)
   function drawProps() {
     if (!world.props) return;
-    ctx.globalAlpha = 0.9;
+    const street = world.art === "street";
+    ctx.globalAlpha = street ? 1 : 0.9;
+    if (street) ctx.imageSmoothingEnabled = true;           // painted sprites look better smoothed
     for (const [name, col, row, sc, anchor] of world.props) {
-      const im = LAB[name];
+      const im = street ? ART[name] : LAB[name];
       if (!im) continue;
       const w = im.width * sc, h = im.height * sc;
       ctx.drawImage(im, col * T + T / 2 - w / 2, anchor === "t" ? row * T : row * T - h, w, h);
     }
+    ctx.imageSmoothingEnabled = false;
     ctx.globalAlpha = 1;
+    for (const [bx0, bx1, by0, by1] of (world.beams || [])) {  // daylight falling down the manholes
+      const gr = ctx.createLinearGradient(0, by0, 0, by1);
+      gr.addColorStop(0, "rgba(255,214,150,.32)"); gr.addColorStop(1, "rgba(255,214,150,0)");
+      ctx.fillStyle = gr;
+      ctx.beginPath(); ctx.moveTo(bx0, by0); ctx.lineTo(bx1, by0); ctx.lineTo(bx1 + 50, by1); ctx.lineTo(bx0 - 50, by1); ctx.closePath(); ctx.fill();
+    }
   }
 
   function drawPickups(now) {
