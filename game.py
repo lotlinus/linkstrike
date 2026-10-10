@@ -46,8 +46,8 @@ WEAPONS = {
     2: {"name": "Rocket",  "dmg": 0,  "cd": 1.10, "speed": 760,  "ammo": 4,  "pellets": 1, "spread": 0.0,  "life": 3.0,  "type": 2},
 }
 
-SOLIDS = "#SC"   # steel, slab, crate
-ONE_WAY = "="    # catwalk grate: land on top, fly up through
+SOLIDS = "#SCB"  # steel, slab, crate, building body (street map: the sprite is drawn over it)
+ONE_WAY = "=-"   # catwalk grate: land on top, fly up through ("-" = same, but a sprite is drawn instead of a grate)
 
 
 # ------------------------------------------------------------------ the map: the Laboratory
@@ -132,42 +132,67 @@ PROPS = [
 ]
 
 
-def clear_line(x0, y0, x1, y1):
+def clear_line(x0, y0, x1, y1, grid=None):
     """True if no solid tile blocks the straight line (used for spawn safety)."""
     n = int(math.hypot(x1 - x0, y1 - y0) // 20) + 1
     for i in range(1, n):
         t = i / n
-        if solid_px(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t):
+        if solid_px(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, grid):
             return False
     return True
 
 
-def solid(c, r):
+def solid(c, r, grid=None):
     if c < 0 or c >= COLS or r < 0 or r >= ROWS:
         return True
-    return GRID[r][c] in SOLIDS
+    return (grid or GRID)[r][c] in SOLIDS
 
 
-def one_way(c, r):
-    return 0 <= c < COLS and 0 <= r < ROWS and GRID[r][c] == ONE_WAY
+def one_way(c, r, grid=None):
+    return 0 <= c < COLS and 0 <= r < ROWS and (grid or GRID)[r][c] in ONE_WAY
 
 
-def solid_px(x, y):
-    return solid(int(x // TILE), int(y // TILE))
+def solid_px(x, y, grid=None):
+    return solid(int(x // TILE), int(y // TILE), grid)
 
 
 def spawn_xy(col, row):
     return col * TILE + TILE / 2 - PW / 2, (row + 1) * TILE - PH - 0.01
 
 
-def world_payload():
-    return {
-        "tile": TILE, "cols": COLS, "rows": ROWS, "grid": GRID,
+class MapDef:
+    """One playable map: grid, pickups, spawns, decoration, and the art/theme the client uses."""
+
+    def __init__(self, id, name, grid, pickups, spawns, backups, props, art, extra=None):
+        self.id, self.name, self.grid = id, name, grid
+        self.pickups, self.spawns, self.backups = pickups, spawns, backups
+        self.props, self.art, self.extra = props, art, extra or {}
+
+
+import street_map as _SM  # noqa: E402  (same TILE/COLS/ROWS as above)
+
+MAPS = {
+    "lab": MapDef("lab", "Laboratory", GRID, PICKUPS, SPAWNS, BACKUP_SPAWNS, PROPS, "lab"),
+    "street": MapDef("street", "Street", _SM.GRID, _SM.PICKUPS, _SM.SPAWNS, _SM.BACKUP_SPAWNS, _SM.PROPS, "street", {
+        "sky": _SM.SKY, "skyline": _SM.SKYLINE, "skyline_base": _SM.SKYLINE_BASE, "street_row": _SM.GT,
+        "beams": [[24 * TILE, 28 * TILE, _SM.GT * TILE, _SM.SEWER_FLOOR * TILE], [52 * TILE, 56 * TILE, _SM.GT * TILE, _SM.SEWER_FLOOR * TILE]],
+    }),
+}
+DEFAULT_MAP = "lab"
+
+
+def world_payload(map_id=DEFAULT_MAP):
+    m = MAPS.get(map_id) or MAPS[DEFAULT_MAP]
+    out = {
+        "tile": TILE, "cols": COLS, "rows": ROWS, "grid": m.grid,
         "pw": PW, "ph": PH, "target": TARGET_KILLS,
-        "pickups": [[k, c * TILE + TILE / 2, (r + 1) * TILE - 18] for k, c, r in PICKUPS],
-        "props": PROPS,
+        "map": m.id, "art": m.art,
+        "pickups": [[k, c * TILE + TILE / 2, (r + 1) * TILE - 18] for k, c, r in m.pickups],
+        "props": m.props,
         "weapons": {str(k): {"name": v["name"], "ammo": v["ammo"]} for k, v in WEAPONS.items()},
     }
+    out.update(m.extra)
+    return out
 
 
 # ------------------------------------------------------------------ entities
@@ -215,20 +240,25 @@ class Projectile:
 
 # ------------------------------------------------------------------ the game
 class Game:
-    def __init__(self):
+    def __init__(self, map_id=DEFAULT_MAP):
         self.players = {}
         self.projs = []
         self.events = []
         self.phase = "play"     # "play" or "over"
         self.winner = -1
-        self.pk_up = [True] * len(PICKUPS)
-        self.pk_t = [0.0] * len(PICKUPS)
+        self.set_map(map_id)
         self.clock = 0.0
         self.spawn_used = {}    # spawn point -> time it was last used
         self.mode = "solo"      # "solo" (free for all) or "team"
         self.time_left = 0.0    # team mode: seconds left
         self.winner_team = -1   # team mode result: SURVIVORS, HUNTERS, or 0 for a draw (-1 while playing)
         self.final_counts = None
+
+    def set_map(self, map_id):
+        self.map = MAPS.get(map_id) or MAPS[DEFAULT_MAP]
+        self.grid = self.map.grid
+        self.pk_up = [True] * len(self.map.pickups)
+        self.pk_t = [0.0] * len(self.map.pickups)
 
     # ---- membership / input
     def add_player(self, pid, name):
@@ -284,9 +314,11 @@ class Game:
             if s_ == 0 or h_ == 0:
                 self._finish_team()
 
-    def restart(self, mode=None):
+    def restart(self, mode=None, map_id=None):
         if mode in ("solo", "team"):
             self.mode = mode
+        if map_id in MAPS:
+            self.set_map(map_id)
         self.phase, self.winner = "play", -1
         self.winner_team, self.final_counts = -1, None
         self.time_left = float(TEAM_MATCH_S)
@@ -296,12 +328,12 @@ class Game:
             for p in self.players.values():
                 p.team = 0
         self.projs.clear()
-        self.pk_up = [True] * len(PICKUPS)
-        self.pk_t = [0.0] * len(PICKUPS)
-        spawns = SPAWNS[:]
+        self.pk_up = [True] * len(self.map.pickups)
+        self.pk_t = [0.0] * len(self.map.pickups)
+        spawns = self.map.spawns[:]
         random.shuffle(spawns)
         if len(self.players) > len(spawns):             # big team rooms: use the backup points too
-            extra = BACKUP_SPAWNS[:]
+            extra = self.map.backups[:]
             random.shuffle(extra)
             spawns += extra
         for i, p in enumerate(self.players.values()):
@@ -312,14 +344,14 @@ class Game:
     def _pick_spawn(self, p):
         """Safest spawn: far from enemies, out of their sight, not just used. Backups only win if primaries are unsafe."""
         others = [q for q in self.players.values() if q is not p and not q.dead]
-        best, best_s = SPAWNS[0], -1e18
-        for backup, pool in ((False, SPAWNS), (True, BACKUP_SPAWNS)):
+        best, best_s = self.map.spawns[0], -1e18
+        for backup, pool in ((False, self.map.spawns), (True, self.map.backups)):
             for col, row in pool:
                 x, y = spawn_xy(col, row)
                 cx, cy = x + PW / 2, y + PH / 2
                 s = min(1500.0, min((math.hypot(cx - q.cx, cy - q.cy) for q in others), default=1500.0))
                 for q in others:                                    # an enemy that can see this spot
-                    if math.hypot(cx - q.cx, cy - q.cy) < 1100 and clear_line(cx, cy, q.cx, q.cy):
+                    if math.hypot(cx - q.cx, cy - q.cy) < 1100 and clear_line(cx, cy, q.cx, q.cy, self.grid):
                         s -= 700
                 if self.clock - self.spawn_used.get((col, row), -99.0) < 6.0:   # used a moment ago
                     s -= 800
@@ -396,13 +428,13 @@ class Game:
         if dx > 0:
             c = int((p.x + PW - 0.01) // TILE)
             for r in range(top, bot + 1):
-                if solid(c, r):
+                if solid(c, r, self.grid):
                     p.x, p.vx = c * TILE - PW, 0.0
                     break
         elif dx < 0:
             c = int(p.x // TILE)
             for r in range(top, bot + 1):
-                if solid(c, r):
+                if solid(c, r, self.grid):
                     p.x, p.vx = (c + 1) * TILE, 0.0
                     break
 
@@ -412,13 +444,13 @@ class Game:
         if dy >= 0:
             r = int((p.y + PH - 0.01) // TILE)
             for c in range(c0, c1 + 1):
-                if solid(c, r) or (one_way(c, r) and prev_bottom <= r * TILE + 1):
+                if solid(c, r, self.grid) or (one_way(c, r, self.grid) and prev_bottom <= r * TILE + 1):
                     p.y, p.vy, p.ground = r * TILE - PH, 0.0, True
                     break
         else:
             r = int(p.y // TILE)
             for c in range(c0, c1 + 1):
-                if solid(c, r):
+                if solid(c, r, self.grid):
                     p.y, p.vy = (r + 1) * TILE, 0.0
                     break
 
@@ -427,7 +459,7 @@ class Game:
         w = WEAPONS[p.wpn]
         ox, oy = p.cx, p.y + SHOULDER_DY
         mx, my = ox + math.cos(p.aim) * MUZZLE_LEN, oy + math.sin(p.aim) * MUZZLE_LEN
-        if solid_px(mx, my):
+        if solid_px(mx, my, self.grid):
             mx, my = ox, oy
         for _ in range(w["pellets"]):
             ang = p.aim + random.uniform(-w["spread"], w["spread"])
@@ -457,7 +489,7 @@ class Game:
             for _ in range(steps):
                 pr.x += sx
                 pr.y += sy
-                if solid_px(pr.x, pr.y):
+                if solid_px(pr.x, pr.y, self.grid):
                     hit = "wall"
                     break
                 for q in self.players.values():
@@ -524,7 +556,7 @@ class Game:
             self.phase, self.winner = "over", killer.id
 
     def _update_pickups(self, dt):
-        for i, (kind, c, r) in enumerate(PICKUPS):
+        for i, (kind, c, r) in enumerate(self.map.pickups):
             if not self.pk_up[i]:
                 self.pk_t[i] -= dt
                 if self.pk_t[i] <= 0:

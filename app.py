@@ -10,6 +10,7 @@ monkey.patch_all()
 import os
 import random
 import re
+import unicodedata
 import time
 
 from flask import Flask, jsonify, render_template, request
@@ -46,6 +47,7 @@ class Room:
         self.game = G.Game()
         self.recorded = False   # this match's result already saved?
         self.mode = "solo"      # "solo" or "team"; the host picks it in the lobby
+        self.map = G.DEFAULT_MAP  # "lab" or "street"; the host picks it in the lobby
 
 
 # ---------------------------------------------------------------- helpers
@@ -61,8 +63,53 @@ def clean_room_name(raw):
 
 
 def clean_name(raw):
-    name = re.sub(r"\s+", " ", str(raw or "")).strip()[:12]
-    return name or "Soldier"
+    """Tidy a typed player name: normalise look-alike characters, drop invisible/control characters."""
+    s = unicodedata.normalize("NFKC", str(raw or ""))
+    s = "".join(ch for ch in s if unicodedata.category(ch)[0] != "C")
+    return re.sub(r"\s+", " ", s).strip()[:12]
+
+
+def name_key(name):
+    """What 'the same name' means: ignores capitals and spaces (Bob = bob = B o b)."""
+    return re.sub(r"\s", "", clean_name(name)).casefold()
+
+
+def unique_name(room, raw, sid):
+    """(final name, None) or (None, error). Blank names get Soldier, Soldier 2, ... automatically."""
+    name = clean_name(raw)
+    taken = {name_key(m["name"]) for s_, m in room.members.items() if s_ != sid}
+    if not name:
+        cand, n = "Soldier", 2
+        while name_key(cand) in taken:
+            cand, n = f"Soldier {n}", n + 1
+        return cand, None
+    if name_key(name) in taken:
+        return None, f'The name "{name}" is already taken in this room. Pick another name and try again.'
+    return name, None
+
+
+def seat_of(room, device, sid):
+    """The sid of another connection from the same device already inside this room, if any."""
+    if device:
+        for s_, m in room.members.items():
+            if m["device"] == device and s_ != sid:
+                return s_
+    return None
+
+
+def take_over_seat(room, new_sid, old_sid):
+    """Same device came back (second tab, refresh, reconnect before the old socket timed out): move its
+    existing player to the new connection. One device = one player per room; kills and team are kept."""
+    m = room.members.pop(old_sid)
+    room.members[new_sid] = m
+    sid_room.pop(old_sid, None)
+    sid_room[new_sid] = room.code
+    if room.host == old_sid:
+        room.host = new_sid
+    leave_room(room.code, sid=old_sid)
+    join_room(room.code, sid=new_sid)
+    socketio.emit("error_msg", {"msg": "You joined this room from another window, so this one was disconnected.", "gone": True}, to=old_sid)
+    return m
 
 
 def add_player(room, sid, name, device=None):
@@ -91,6 +138,7 @@ def lobby_payload(room):
         "max": room_max(room),
         "min": G.TEAM_MIN_PLAYERS if room.mode == "team" else MIN_TO_START,
         "mode": room.mode,
+        "map": room.map,
         "players": sorted(
             ({"id": m["id"], "name": m["name"]} for m in room.members.values()),
             key=lambda m: m["id"],
@@ -179,12 +227,23 @@ def healthz():
 
 # ---------------------------------------------------------------- sockets
 def enter_room(room, sid, name, device=None):
-    remove_player(sid)  # in case they were in another room
-    m = add_player(room, sid, name, device)
+    """Seat a connection in a room. Returns False (after telling the player why) if the name is taken."""
+    dev = rankings.clean_device(device)
+    old = seat_of(room, dev, sid)
+    if old:
+        m = take_over_seat(room, sid, old)          # keeps the existing name, id, kills and team
+    else:
+        final, err = unique_name(room, name, sid)
+        if err:
+            emit("error_msg", {"msg": err})
+            return False
+        remove_player(sid)  # in case they were in another room
+        m = add_player(room, sid, final, device)
     emit("joined", {"code": room.code, "you": m["id"]})
     if room.state == "playing":
-        emit("start", {"world": G.world_payload()})
+        emit("start", {"world": G.world_payload(room.map)})
     broadcast_lobby(room)
+    return True
 
 
 @socketio.on("create_room")
@@ -216,9 +275,9 @@ def on_create(data):
             emit("error_msg", {"msg": f"The room name {name} is in use right now. Pick another."})
             return
         roomnames.claim(name, device)                   # the owner is back: refresh, rejoin, take host again
-        enter_room(existing, request.sid, data.get("name"), device)
-        existing.host = request.sid
-        broadcast_lobby(existing)
+        if enter_room(existing, request.sid, data.get("name"), device):
+            existing.host = request.sid
+            broadcast_lobby(existing)
         return
     if roomnames.claim(name, device) != device:         # someone claimed it a split second ago
         emit("error_msg", {"msg": f"The room name {name} belongs to someone else. Pick another."})
@@ -239,11 +298,12 @@ def on_join(data):
         else:
             emit("error_msg", {"msg": "Room not found. Check the code and try again.", "gone": True})
         return
+    returning = seat_of(room, rankings.clean_device(data.get("device")), request.sid)
     cap = room_max(room)
-    if len(room.members) >= cap and request.sid not in room.members:
+    if not returning and len(room.members) >= cap and request.sid not in room.members:
         emit("error_msg", {"msg": f"This room is full ({cap} of {cap} players)."})
         return
-    if room.mode == "team" and room.state == "playing" and room.game.phase == "play" and request.sid not in room.members:
+    if not returning and room.mode == "team" and room.state == "playing" and room.game.phase == "play" and request.sid not in room.members:
         emit("error_msg", {"msg": "A team match is already in progress. Try again when it ends."})
         return
     enter_room(room, request.sid, data.get("name"), data.get("device"))
@@ -260,8 +320,8 @@ def on_start():
         return
     room.state = "playing"
     room.recorded = False
-    room.game.restart(room.mode)
-    socketio.emit("start", {"world": G.world_payload()}, to=room.code)
+    room.game.restart(room.mode, room.map)
+    socketio.emit("start", {"world": G.world_payload(room.map)}, to=room.code)
     broadcast_lobby(room)
     if not room.loop_running:
         room.loop_running = True
@@ -278,6 +338,16 @@ def on_set_mode(data):
         emit("error_msg", {"msg": f"Solo Battle fits {MAX_PLAYERS} players and {len(room.members)} are in the room."})
         return
     room.mode = mode
+    broadcast_lobby(room)
+
+
+@socketio.on("set_map")
+def on_set_map(data):
+    room = rooms.get(sid_room.get(request.sid))
+    map_id = (data or {}).get("map")
+    if not room or room.host != request.sid or room.state != "lobby" or map_id not in G.MAPS:
+        return
+    room.map = map_id
     broadcast_lobby(room)
 
 
