@@ -218,6 +218,14 @@ def api_leaderboard():
     return resp
 
 
+@app.route("/api/alcatraz")
+def api_alcatraz():
+    room = rooms.get(alcatraz.NAME)
+    resp = jsonify({"open": bool(room), "players": len(room.members) if room else 0})
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
 @app.route("/healthz")
 def healthz():
     return "ok"

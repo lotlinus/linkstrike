@@ -3,8 +3,6 @@ function start() {
 
   const $ = (id) => document.getElementById(id);
   const COLORS = ["#5fa83a", "#d94b45", "#3f8fe0", "#f0b429", "#9b59d0", "#e8eef2"];
-  const TEAM_NAMES = { 1: "Survivors", 2: "Hunters" };
-  const TEAM_COLORS = { 1: "#3f8fe0", 2: "#d94b45" };
   const INTERP_MS = 100;           // render this far in the past for smooth motion
   const SPR = 0.85;                // sprite scale (128px frames)
   const WAIST = 100;               // frame rows above this swing with the aim
@@ -18,11 +16,10 @@ function start() {
   let me = null, code = null, world = null, isHost = false, lobby = null;
   let snaps = [], evq = [], rtt = null, rafId = 0, toastTimer = 0;
   let phase = "play", winner = -1, overShown = false;
-  let mode = "solo", winTeam = -1;          // from the server snapshot: "solo" | "team"
   let latest = null;
   let localAim = 0, myPos = null;
   let shake = 0, hurtFlash = 0, lastFrame = 0, boardKey = "";
-  let actx = null, noiseBuf = null, muted = false;
+  let actx = null, noiseBuf = null, muted = false, volume = 1, ambientG = null;
   const cam = { x: 1600, y: 1200 };
   const view = { sc: 1 };
   const pst = new Map();
@@ -37,7 +34,6 @@ function start() {
     if (name === "game") { resetPads(); startRender(); }
     else { cancelAnimationFrame(rafId); rafId = 0; }
     syncAmbient();
-    if (name === "home") loadBoard();
   }
 
   function toast(msg, bad) {
@@ -67,31 +63,7 @@ function start() {
     return d;
   }
   const inviteUrl = () => location.origin + "/r/" + code;
-  // team of a player (explicit server data, never guessed from colour)
-  const teamOf = (id) => {
-    const p = latest && latest.p.find((q) => q[0] === id);
-    return p ? p[12] : 0;
-  };
-  const colorOf = (id) => (mode === "team" && teamOf(id) ? TEAM_COLORS[teamOf(id)] : COLORS[id % COLORS.length]);
-  const fmtTime = (s) => { s = Math.max(0, s | 0); return String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0"); };
-  // one tinted copy of the base skin per team, so every member of a team looks the same colour
-  const tintCache = {};
-  function teamSkin(team) {
-    const base = skinImgs[0];
-    if (!base) return null;
-    if (tintCache[team] && tintCache[team].src === base) return tintCache[team].cv;
-    const cv = document.createElement("canvas");
-    cv.width = base.width; cv.height = base.height;
-    const g = cv.getContext("2d");
-    g.drawImage(base, 0, 0);
-    g.globalCompositeOperation = "color";
-    g.fillStyle = TEAM_COLORS[team];
-    g.fillRect(0, 0, cv.width, cv.height);
-    g.globalCompositeOperation = "destination-in";
-    g.drawImage(base, 0, 0);
-    tintCache[team] = { src: base, cv };
-    return cv;
-  }
+  const colorOf = (id) => COLORS[id % COLORS.length];
   const nameOf = (id) => {
     const p = lobby && lobby.players.find((q) => q.id === id);
     return p ? p.name : "Soldier";
@@ -110,15 +82,45 @@ function start() {
     toast("Not connected to the server yet. Retrying...", true);
     return false;
   }
+  // player limit chips: the host picks 2 to 6 (remembered for next time)
+  let cap = 6;
+  try { const c = parseInt(localStorage.getItem("ls_cap"), 10); if (c >= 2 && c <= 6) cap = c; } catch (e) {}
+  const capBtns = document.querySelectorAll("#capRow .cap");
+  const showCap = () => { for (const b of capBtns) b.classList.toggle("on", Number(b.dataset.cap) === cap); };
+  for (const b of capBtns) b.onclick = () => { cap = Number(b.dataset.cap); showCap(); };
+  showCap();
   // top-left server pill on the landing page
-    $("createBtn").onclick = () => {
+  const nameBox = $("nameBox");
+  function doCreate() {
     if (!online()) return;
     const rn = $("roomNameInput").value.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
-    if ($("roomNameInput").value.trim() && rn.length < 3) return toast("Room names need 3 to 12 letters or numbers.", true);
-    try { localStorage.setItem("ls_room", rn); } catch (e) {}
+    if (rn.length < 3) return toast("Name your room: 3 to 12 letters or numbers.", true);
+    try { localStorage.setItem("ls_room", rn); localStorage.setItem("ls_cap", String(cap)); } catch (e) {}
     creating = true;
-    socket.emit("create_room", { name: myName(), device: deviceId(), room_name: rn });
+    socket.emit("create_room", { name: myName(), device: deviceId(), room_name: rn, max_players: cap });
+  }
+  $("createBtn").onclick = () => {
+    if (!online()) return;
+    nameBox.hidden = false;
+    $("roomNameInput").focus();
+    nameBox.scrollIntoView({ block: "center", behavior: "smooth" });
   };
+  $("nameGoBtn").onclick = doCreate;
+  $("roomNameInput").addEventListener("keydown", (e) => { if (e.key === "Enter") doCreate(); });
+
+  // ALCATRAZ: the button only shows while tonight's room is open; whoever joins first is host and picks the map
+  async function checkAlcatraz() {
+    try {
+      const res = await fetch("/api/alcatraz", { cache: "no-store" });
+      const d = await res.json();
+      const live = !!d.open && !window.ROOM_CODE;
+      $("alcBlock").hidden = !live;
+      if (live) $("alcSub").textContent = d.players ? d.players + " inside \u00b7 tap to join" : "Tap to join \u00b7 first in picks the map";
+    } catch (e) {}
+  }
+  $("alcBtn").onclick = () => { if (online()) socket.emit("join", { code: "ALCATRAZ", name: myName(), device: deviceId() }); };
+  checkAlcatraz();
+  setInterval(() => { if (!document.hidden) checkAlcatraz(); }, 15000);
   $("joinBtn").onclick = joinTyped;
   $("codeInput").addEventListener("keydown", (e) => { if (e.key === "Enter") joinTyped(); });
   $("acceptBtn").onclick = () => { if (online()) socket.emit("join", { code: window.ROOM_CODE, name: myName(), device: deviceId() }); };
@@ -150,13 +152,6 @@ function start() {
       return await res.json();
     } catch (e) { return { enabled: false, top: [], me: null }; }
   }
-  async function loadBoard() {
-    const d = await fetchBoard(3);
-    const mine = d.me ? d.me.rank : -1;
-    $("lbTop").innerHTML = d.top.length
-      ? d.top.map((r, i) => lbRow(r, d.me && r.rank === mine && r.name === d.me.name && r.kills === d.me.kills, "r" + Math.min(3, i + 1))).join("")
-      : '<li class="lb-empty">No rankings yet</li>';
-  }
   $("lbAll").onclick = async () => {
     $("lbSheet").hidden = false;
     $("lbFull").innerHTML = '<li class="lb-empty">Loading...</li>';
@@ -174,10 +169,69 @@ function start() {
   $("lbClose").onclick = closeBoard;
   $("lbSheet").addEventListener("click", (e) => { if (e.target === $("lbSheet")) closeBoard(); });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeBoard(); });
-  loadBoard();
+
+  // ------------------------------------------------------------ settings + ALCATRAZ alerts (browser push)
+  const pushOK = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+  const keyBytes = (s) => {
+    const raw = atob((s + "=".repeat((4 - (s.length % 4)) % 4)).replace(/-/g, "+").replace(/_/g, "/"));
+    return Uint8Array.from(raw, (c) => c.charCodeAt(0));
+  };
+  async function pushSub() {
+    if (!pushOK) return null;
+    const reg = await navigator.serviceWorker.getRegistration();
+    return reg ? reg.pushManager.getSubscription() : null;
+  }
+  async function pushOn() {
+    const k = await (await fetch("/api/push/key", { cache: "no-store" })).json();
+    if (!k.enabled) return toast("Alerts aren't set up on the server yet.", true);
+    if (!pushOK) return toast("This browser can't do alerts. On iPhone, add the game to your Home Screen first.", true);
+    if ((await Notification.requestPermission()) !== "granted") return toast("Notifications are blocked in your browser settings.", true);
+    const reg = await navigator.serviceWorker.register("/sw.js");
+    await navigator.serviceWorker.ready;
+    const sub = (await reg.pushManager.getSubscription()) ||
+      (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(k.key) }));
+    const r = await fetch("/api/push/subscribe", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sub: sub.toJSON(), device: deviceId() }) });
+    if (!r.ok) { await sub.unsubscribe(); return toast("Couldn't turn alerts on. Try again.", true); }
+    toast("ALCATRAZ alerts are on");
+  }
+  async function pushOff() {
+    const sub = await pushSub();
+    if (!sub) return;
+    fetch("/api/push/unsubscribe", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ endpoint: sub.endpoint }) }).catch(() => {});
+    await sub.unsubscribe();
+  }
+  async function showPushState() {
+    let on = false;
+    try { on = !!(await pushSub()) && Notification.permission === "granted"; } catch (e) {}
+    $("setPush").textContent = on ? "On" : "Off";
+    return on;
+  }
+  $("setBtn").onclick = () => {
+    $("setSound").textContent = muted ? "Off" : "On";
+    $("setVol").value = Math.round(volume * 100);
+    showPushState();
+    $("setSheet").hidden = false;
+  };
+  const closeSettings = () => { $("setSheet").hidden = true; };
+  $("setClose").onclick = closeSettings;
+  $("setSheet").addEventListener("click", (e) => { if (e.target === $("setSheet")) closeSettings(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSettings(); });
+  $("setSound").onclick = toggleMute;
+  $("setVol").oninput = (e) => {
+    volume = clamp(Number(e.target.value) / 100, 0, 1);
+    try { localStorage.setItem("ls_vol", String(volume)); } catch (err) {}
+    if (ambientG) ambientG.gain.value = 1.8 * volume;
+  };
+  $("setPush").onclick = async () => {
+    try { if (await showPushState()) await pushOff(); else await pushOn(); }
+    catch (e) { toast("Couldn't change alerts. Try again.", true); }
+    showPushState();
+  };
 
   // ------------------------------------------------------------ lobby
-  $("codeBtn").onclick = () => copy(code, "Room code copied");
+  $("codeBtn").onclick = () => copy(code, "Room name copied");
   $("shareBtn").onclick = async () => {
     const url = inviteUrl();
     if (navigator.share) {
@@ -188,9 +242,6 @@ function start() {
   };
   $("startBtn").onclick = () => { socket.emit("start_game"); enterFullscreen(); };
   $("leaveLobbyBtn").onclick = leaveRoom;
-  for (const b of document.querySelectorAll("#modeBox .mode")) {
-    b.onclick = () => { if (isHost) socket.emit("set_mode", { mode: b.dataset.mode }); };
-  }
   for (const b of document.querySelectorAll("#mapBox .mode")) {
     b.onclick = () => { if (isHost) socket.emit("set_map", { map: b.dataset.map }); };
   }
@@ -198,12 +249,14 @@ function start() {
   $("overLeave").onclick = leaveRoom;
   $("againBtn").onclick = () => socket.emit("rematch");
   $("fsBtn").onclick = enterFullscreen;
-  $("sndBtn").onclick = () => {
+  function toggleMute() {
     muted = !muted;
     try { localStorage.setItem("ls_mute", muted ? "1" : "0"); } catch (e) {}
     $("sndBtn").textContent = muted ? "Muted" : "Sound";
+    $("setSound").textContent = muted ? "Off" : "On";
     syncAmbient();
-  };
+  }
+  $("sndBtn").onclick = toggleMute;
 
   function copy(text, okMsg) {
     if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -225,12 +278,13 @@ function start() {
     socket.emit("leave");
     code = null; world = null; lobby = null; snaps = []; evq = []; latest = null; me = null;
     pst.clear(); parts.length = 0; expls.length = 0; flashes.length = 0;
-    $("teamBar").hidden = true; mode = "solo"; winTeam = -1; $("over").hidden = true; $("feed").textContent = "";
+    $("over").hidden = true; $("feed").textContent = "";
     if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {});
     history.replaceState(null, "", "/");
     window.ROOM_CODE = "";
     $("inviteBlock").hidden = true;
     $("mainBlock").hidden = false;
+    $("nameBox").hidden = true;
     show("home");
   }
 
@@ -261,9 +315,6 @@ function start() {
       }
       ul.append(li);
     }
-    const lm = lobby.mode || "solo";
-    for (const b of document.querySelectorAll("#modeBox .mode")) b.classList.toggle("on", b.dataset.mode === lm);
-    $("modeBox").classList.toggle("locked", !isHost);
     const lmap = lobby.map || "lab";
     for (const b of document.querySelectorAll("#mapBox .mode")) b.classList.toggle("on", b.dataset.map === lmap);
     $("mapBox").classList.toggle("locked", !isHost);
@@ -310,8 +361,7 @@ function start() {
     snaps = []; evq = []; latest = null;
     pst.clear(); parts.length = 0; expls.length = 0; flashes.length = 0;
     $("over").hidden = true; $("feed").textContent = "";
-    phase = "play"; overShown = false; mode = "solo"; winTeam = -1;
-    $("teamBar").hidden = true;
+    phase = "play"; overShown = false;
     buildTiles();
     show("game");
     play("match_start", 0.9);
@@ -325,7 +375,6 @@ function start() {
     latest = d;
     trackPlayers(d, at);
     phase = d.m[0]; winner = d.m[1];
-    mode = d.m[2] || "solo"; winTeam = d.m.length > 6 ? d.m[6] : -1;
     updateHud();
   });
 
@@ -387,32 +436,11 @@ function start() {
       const b = $("banner");
       if ((mine[8] & 4) && phase === "play") {
         b.hidden = false;
-        const as = mode === "team" && mine[12] ? (mine[12] === 1 ? "as a Survivor " : "as a Hunter ") : "";
-        b.textContent = "Respawning " + as + "in " + Math.max(1, Math.ceil(mine[11]));
+        b.textContent = "Respawning in " + Math.max(1, Math.ceil(mine[11]));
       } else b.hidden = true;
     }
-    const tb = $("teamBar");
-    if (mode === "team") {
-      const sv = latest.p.filter((p) => p[12] === 1).length, hn = latest.p.filter((p) => p[12] === 2).length;
-      const m = latest.m, c1 = phase === "over" ? m[4] : sv, c2 = phase === "over" ? m[5] : hn;
-      const left = m[3];
-      const key2 = c1 + "|" + c2 + "|" + left + "|" + (mine ? mine[12] : 0);
-      if (tb.dataset.k !== key2) {
-        tb.dataset.k = key2;
-        tb.textContent = "";
-        const a = document.createElement("span"); a.className = "sv"; a.textContent = "Survivors: " + c1;
-        const h = document.createElement("span"); h.className = "hn"; h.textContent = "Hunters: " + c2;
-        const t = document.createElement("span"); t.className = "tm" + (left <= 30 && phase === "play" ? " low" : ""); t.textContent = fmtTime(left);
-        tb.append(a, document.createTextNode("|"), h, document.createTextNode("|"), t);
-        if (mine && mine[12]) {
-          const y = document.createElement("span"); y.className = mine[12] === 1 ? "sv" : "hn"; y.textContent = "You: " + TEAM_NAMES[mine[12]];
-          tb.append(document.createTextNode("|"), y);
-        }
-      }
-      tb.hidden = false;
-    } else tb.hidden = true;
     const rows = latest.p.slice().sort((a, b) => b[9] - a[9] || a[0] - b[0]);
-    const key = rows.map((p) => p[0] + ":" + p[9] + ":" + p[12] + ":" + p[13]).join(",") + "|" + (lobby ? lobby.players.length : 0) + mode;
+    const key = rows.map((p) => p[0] + ":" + p[9] + ":" + p[12]).join(",") + "|" + (lobby ? lobby.players.length : 0);
     if (key !== boardKey) {
       boardKey = key;
       fillBoard($("board"), rows, false);
@@ -422,19 +450,9 @@ function start() {
       overShown = true;
       fillBoard($("overBoard"), rows, true);
       const sub = $("overSub");
-      let won;
-      if (mode === "team") {
-        const m = latest.m;
-        $("overTitle").textContent = winTeam === 0 ? "Draw!" : TEAM_NAMES[winTeam] + " win!";
-        sub.hidden = false;
-        sub.textContent = "Final: Survivors " + m[4] + " | Hunters " + m[5];
-        const myTeam = mine ? mine[12] : 0;
-        won = winTeam > 0 && winTeam === myTeam;
-      } else {
-        sub.hidden = true;
-        $("overTitle").textContent = winner === me ? "You win!" : nameOf(winner) + " wins!";
-        won = winner === me;
-      }
+      sub.hidden = true;
+      $("overTitle").textContent = winner === me ? "You win!" : nameOf(winner) + " wins!";
+      const won = winner === me;
       $("over").hidden = false;
       $("againBtn").hidden = !isHost;
       $("againWait").hidden = isHost;
@@ -458,17 +476,14 @@ function start() {
       if (p[0] === me) li.className = "me";
       const dot = document.createElement("span");
       dot.className = "dot";
-      dot.style.background = mode === "team" && p[12] ? TEAM_COLORS[p[12]] : COLORS[p[0] % COLORS.length];
+      dot.style.background = COLORS[p[0] % COLORS.length];
       if (!big) dot.style.width = dot.style.height = "12px";
       const nm = document.createElement("span");
       nm.className = "nm";
       nm.textContent = nameOf(p[0]);
       const k = document.createElement("span");
-      k.textContent = big ? p[9] + " kills \u00b7 " + p[13] + " deaths" : String(p[9]);
-      if (big && mode === "team" && p[12]) {
-        const tg = document.createElement("span"); tg.className = "tg"; tg.textContent = TEAM_NAMES[p[12]];
-        li.append(dot, nm, tg, k);
-      } else li.append(dot, nm, k);
+      k.textContent = big ? p[9] + " kills \u00b7 " + p[12] + " deaths" : String(p[9]);
+      li.append(dot, nm, k);
       ul.append(li);
     }
   }
@@ -498,6 +513,7 @@ function start() {
   // ------------------------------------------------------------ sound (WAV files in static/audio, synthesized fallback)
   try { muted = localStorage.getItem("ls_mute") === "1"; } catch (e) {}
   $("sndBtn").textContent = muted ? "Muted" : "Sound";
+  try { const v = parseFloat(localStorage.getItem("ls_vol")); if (v >= 0 && v <= 1) volume = v; } catch (e) {}
   function ac() {
     if (!actx) {
       const C = window.AudioContext || window.webkitAudioContext;
@@ -543,7 +559,7 @@ function start() {
     if (muted || a.state !== "running" || vol < 0.02) return true;
     const s = a.createBufferSource(); s.buffer = b;
     if (rate) s.playbackRate.value = rate;
-    const g = a.createGain(); g.gain.value = vol;
+    const g = a.createGain(); g.gain.value = vol * volume;
     s.connect(g); g.connect(a.destination); s.start();
     return true;
   }
@@ -553,7 +569,7 @@ function start() {
     const want = !!(a && a.state === "running" && !muted && SND.menu_ambient && !$("game").classList.contains("active"));
     if (want && !ambient) {
       const s = a.createBufferSource(); s.buffer = SND.menu_ambient; s.loop = true;
-      const g = a.createGain(); g.gain.value = 1.8;
+      const g = a.createGain(); g.gain.value = 1.8 * volume; ambientG = g;
       s.connect(g); g.connect(a.destination); s.start();
       ambient = s;
     } else if (!want && ambient) {
@@ -575,7 +591,7 @@ function start() {
     f.frequency.setValueAtTime(f0, t);
     f.frequency.exponentialRampToValueAtTime(Math.max(40, f1), t + dur);
     const g = a.createGain();
-    g.gain.setValueAtTime(vol, t);
+    g.gain.setValueAtTime(vol * volume, t);
     g.gain.exponentialRampToValueAtTime(0.001, t + dur);
     s.connect(f); f.connect(g); g.connect(a.destination);
     s.start(t); s.stop(t + dur + 0.03);
@@ -588,7 +604,7 @@ function start() {
     o.frequency.setValueAtTime(f0, t);
     o.frequency.exponentialRampToValueAtTime(Math.max(30, f1), t + dur);
     const g = a.createGain();
-    g.gain.setValueAtTime(vol, t);
+    g.gain.setValueAtTime(vol * volume, t);
     g.gain.exponentialRampToValueAtTime(0.001, t + dur);
     o.connect(g); g.connect(a.destination);
     o.start(t); o.stop(t + dur + 0.03);
@@ -738,7 +754,7 @@ function start() {
     "tank_green", "tank_blue", "tank_small", "term_rack", "term_desk", "term_kiosk", "term_arcade", "term_a",
     "light_cyan", "light_amber", "light_red", "pipe_long", "pipe_bundle", "pk_shotgun", "pk_rocket", "pk_health"];
   Promise.all(LAB_FILES.map((n) => loadImg("/static/img/lab/" + n + ".png?v=7").then((im) => { if (im) LAB[n] = im; })))
-    .then(() => { if (tiles && !(world && world.art === "street")) useLabTiles(); });
+    .then(() => { if (tiles && !(world && (world.art === "street" || world.art === "stairs"))) useLabTiles(); });
 
   // Street art (static/img/street): only the sprites the map's props list asks for
   const ART = {}, artAsked = new Set();
@@ -824,7 +840,7 @@ function start() {
       g.fillStyle = "#ffd479"; g.fillRect(14, 2, 12, 4);
       g.fillStyle = "#3a4458"; g.fillRect(12, 0, 16, 2);
     });
-    if (world && world.art === "street") useStreetTiles(); else useLabTiles();
+    if (world && world.art === "street") useStreetTiles(); else if (world && world.art === "stairs") useStairsTiles(); else useLabTiles();
   }
 
   // Street theme: asphalt road on top, wet brick sewer underneath (all drawn in code)
@@ -857,6 +873,32 @@ function start() {
       g.fillStyle = "#38353a"; for (let i = 0; i < 5; i++) g.fillRect((i * 13 + 5) % 34, 30 + (i * 3) % 6, 5, 3);
     }));
     tiles.bg = [0, 1, 2].map((v) => mk((g) => bricks(g, v === 0 ? "#171e29" : v === 1 ? "#19212d" : "#151b26", "#1d2633", v === 2 ? "#202b3a" : null)));
+  }
+
+  // Staircase theme: plain concrete building (all drawn in code)
+  function useStairsTiles() {
+    const wall = (g, base, line) => {
+      g.fillStyle = base; g.fillRect(0, 0, T, T);
+      g.fillStyle = line; g.fillRect(0, 0, T, 1); g.fillRect(0, 0, 1, T);
+    };
+    tiles.steel = [0, 1, 2].map((v) => mk((g) => {                         // outer walls and roof: dark block
+      wall(g, v === 1 ? "#3a3f4d" : "#353a48", "#2a2e3a");
+      g.fillStyle = "#454b5c"; g.fillRect(0, T - 3, T, 3);
+      if (v === 2) { g.fillStyle = "#2f3441"; g.fillRect(8, 8, 24, 24); }
+    }));
+    tiles.mid = mk((g) => { wall(g, "#59606f", "#4a505e"); g.fillStyle = "#4a505e"; g.fillRect(0, 19, T, 1); });
+    tiles.top = mk((g) => {                                                // a surface you stand on: light lip on top
+      wall(g, "#59606f", "#4a505e");
+      g.fillStyle = "#a9b0bf"; g.fillRect(0, 0, T, 4);
+      g.fillStyle = "#7f8696"; g.fillRect(0, 4, T, 2);
+      g.fillStyle = "#4a505e"; g.fillRect(0, 22, T, 1);
+    });
+    for (let v = 0; v < 3; v++) {                                          // back wall: soft plaster, faint panel lines
+      tiles.bg[v] = mk((g) => {
+        g.fillStyle = v === 0 ? "#252b3a" : v === 1 ? "#272d3d" : "#232938"; g.fillRect(0, 0, T, T);
+        g.fillStyle = "#2c3345"; g.fillRect(0, 0, T, 1); g.fillRect(0, 0, 1, T);
+      });
+    }
   }
 
   // swap the drawn tiles for the Laboratory sprites (only the ones that loaded)
@@ -931,7 +973,8 @@ function start() {
           }
           if (!solidCh && c > 0 && c < world.cols - 1 && r >= 1) {
             let t = tiles.bg[hash(c, r) % 3];
-            if (r % 6 === 2) t = tiles.pipe;
+            if (world.art === "stairs") t = tiles.bg[hash(c, r) % 3];
+            else if (r % 6 === 2) t = tiles.pipe;
             else if (c % 9 === 4 && r % 7 === 1) t = tiles.lamp;
             ctx.drawImage(t, x, y);
           }
@@ -973,6 +1016,18 @@ function start() {
     }
     ctx.imageSmoothingEnabled = false;
     ctx.globalAlpha = 1;
+    for (const [c, r0, r1, w] of (world.ladders || [])) {      // ladders: two rails and rungs
+      const x0 = c * T + 10, x1 = (c + w) * T - 10;
+      ctx.fillStyle = "#8a6a3b"; ctx.fillRect(x0, r0 * T, 4, (r1 - r0) * T); ctx.fillRect(x1 - 4, r0 * T, 4, (r1 - r0) * T);
+      ctx.fillStyle = "#b08a4e";
+      for (let y = r0 * T + 6; y < r1 * T; y += 14) ctx.fillRect(x0, y, x1 - x0, 3);
+    }
+    for (const [c0, c1, row] of (world.rails || [])) {         // railing along the top corridor
+      const y = row * T;
+      ctx.fillStyle = "#8f98ab";
+      for (let x = c0 * T; x <= (c1 + 1) * T; x += 28) ctx.fillRect(x, y - 26, 3, 26);
+      ctx.fillRect(c0 * T, y - 28, (c1 + 1 - c0) * T, 3); ctx.fillRect(c0 * T, y - 14, (c1 + 1 - c0) * T, 2);
+    }
     for (const [bx0, bx1, by0, by1] of (world.beams || [])) {  // daylight falling down the manholes
       const gr = ctx.createLinearGradient(0, by0, 0, by1);
       gr.addColorStop(0, "rgba(255,214,150,.32)"); gr.addColorStop(1, "rgba(255,214,150,0)");
@@ -1027,10 +1082,9 @@ function start() {
     if (dead && now - st.deadAt > 1900) return;
     const aim = id === me && !dead ? localAim : p[5];
     const facing = Math.cos(aim) >= 0 ? 1 : -1;
-    const team = mode === "team" ? p[12] : 0;
-    const sid = team ? 0 : id % 6;
+    const sid = id % 6;
     const cnt = SK[sid] || [7, 8, 4, 3, 4];
-    const img = (team && teamSkin(team)) || skinImgs[sid];
+    const img = skinImgs[sid];
     const ground = !!(flags & 1), thrust = !!(flags & 2), firing = !!(flags & 8);
 
     let row = 0, idx = 0, whole = false;
@@ -1046,7 +1100,7 @@ function start() {
     ctx.scale(facing * SPR, SPR);
     if (!dead) drawJetpack(thrust);
     if (!img) {
-      ctx.fillStyle = team ? TEAM_COLORS[team] : COLORS[id % 6]; ctx.fillRect(-16, -64, 32, 64);
+      ctx.fillStyle = COLORS[id % 6]; ctx.fillRect(-16, -64, 32, 64);
     } else if (whole) {
       ctx.drawImage(img, idx * 128, row * 128, 128, 128, -64, -127, 128, 128);
     } else {
@@ -1069,7 +1123,7 @@ function start() {
     ctx.textAlign = "center";
     ctx.font = "700 14px 'Barlow Semi Condensed', sans-serif";
     ctx.lineWidth = 4; ctx.strokeStyle = "rgba(10,18,32,.85)";
-    ctx.fillStyle = team ? TEAM_COLORS[team] : COLORS[id % 6];
+    ctx.fillStyle = COLORS[id % 6];
     const nm = nameOf(id);
     ctx.strokeText(nm, cx, y - 14); ctx.fillText(nm, cx, y - 14);
     ctx.fillStyle = "rgba(10,18,32,.8)"; ctx.fillRect(cx - 19, y - 10, 38, 5);

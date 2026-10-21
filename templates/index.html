@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bungee&family=Barlow+Semi+Condensed:wght@500;600;700&family=Chakra+Petch:wght@500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/style.css?v=8">
+<link rel="stylesheet" href="/static/style.css?v=11">
 <style id="phone-fit">
 *,*::before,*::after{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
@@ -58,15 +58,6 @@ body{overflow-x:hidden}
         </label>
       </div></div></div>
 
-      <div class="glow blue"><div class="cut frame"><div class="in">
-        <div class="lb-head">
-          <svg class="lb-trophy" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h10v2h3a1 1 0 0 1 1 1v1.5c0 2.3-1.6 4.2-3.8 4.7A6 6 0 0 1 13 15.9V18h3v3H8v-3h3v-2.1a6 6 0 0 1-4.2-3.7C4.6 11.7 3 9.8 3 7.5V6a1 1 0 0 1 1-1h3V3z" fill="currentColor"/></svg>
-          <div class="lb-title"><b>Global leaderboard</b><small>Top 3 players</small></div>
-          <button id="lbAll" class="lb-all" type="button">View all <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15M13 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-        </div>
-        <ol id="lbTop" class="lb-list"><li class="lb-empty">Loading...</li></ol>
-      </div></div></div>
-
       <div id="inviteBlock" class="stack" hidden>
         <div class="glow blue"><div class="cut frame"><div class="in">
           <p class="invite">You're invited to room <strong id="inviteCode"></strong></p>
@@ -80,22 +71,38 @@ body{overflow-x:hidden}
         <button id="ownRoomBtn" class="linkbtn">Make my own room instead</button>
       </div>
 
+      <div id="alcBlock" class="stack" hidden>
+        <div class="glow orange"><button id="alcBtn" class="cut mbtn orange" type="button"><span class="in">
+          <i class="sep"></i>
+          <span class="tx"><b>ALCATRAZ is live</b><small id="alcSub">Tap to join &middot; first in picks the map</small></span>
+          <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4l8 8-8 8" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span></button></div>
+      </div>
+
       <div id="mainBlock" class="stack">
         <div class="glow blue"><div class="cut frame"><div class="in">
-          <span class="lbl">Room name <span class="opt">(optional)</span></span>
-          <label class="field" for="roomNameInput">
-            <svg class="fi" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9h14M5 15h14M10 4L8 20M16 4l-2 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
-            <input id="roomNameInput" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Random code if empty">
-          </label>
-          <p class="rn-hint">Pick a name your friends can remember. It's yours to reuse any time.</p>
+          <span class="lbl">Players</span>
+          <div id="capRow" class="caprow" role="radiogroup" aria-label="Number of players">
+            <button type="button" class="cap" data-cap="2">2</button><button type="button" class="cap" data-cap="3">3</button><button type="button" class="cap" data-cap="4">4</button><button type="button" class="cap" data-cap="5">5</button><button type="button" class="cap on" data-cap="6">6</button>
+          </div>
         </div></div></div>
 
         <div class="glow orange"><button id="createBtn" class="cut mbtn orange"><span class="in">
           <svg class="mi" viewBox="0 0 32 24" aria-hidden="true"><circle cx="16" cy="7" r="5" fill="currentColor"/><path d="M6.5 22c0-5.5 4-8.5 9.5-8.5s9.5 3 9.5 8.5z" fill="currentColor"/><circle cx="5" cy="9" r="3.2" fill="currentColor"/><path d="M0 21c0-4 2-6.5 5.5-6.5 1 0 1.8.2 2.5.5-1.6 1.4-2.4 3.4-2.5 6z" fill="currentColor"/><circle cx="27" cy="9" r="3.2" fill="currentColor"/><path d="M32 21c0-4-2-6.5-5.5-6.5-1 0-1.8.2-2.5.5 1.6 1.4 2.4 3.4 2.5 6z" fill="currentColor"/></svg>
           <i class="sep"></i>
-          <span class="tx"><b>Create room</b><small>Play with friends &middot; 6 in Solo, up to 12 in Teams</small></span>
+          <span class="tx"><b>Create room</b></span>
           <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4l8 8-8 8" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </span></button></div>
+
+        <div id="nameBox" class="glow blue" hidden><div class="cut frame"><div class="in">
+          <span class="lbl">Room name</span>
+          <div class="join-row">
+            <label class="field" for="roomNameInput" style="flex:1 1 auto">
+              <input id="roomNameInput" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="e.g. LOTSARENA">
+            </label>
+            <div class="glow orange"><button id="nameGoBtn" class="cut jbtn" style="--c:9px;--t:2px"><span class="in">Go</span></button></div>
+          </div>
+        </div></div></div>
 
         <div class="glow blue"><div class="cut frame"><div class="in">
           <div class="jt">
@@ -103,16 +110,23 @@ body{overflow-x:hidden}
             <span>Join a room</span>
           </div>
           <div class="join-row">
-            <input id="codeInput" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Enter room code or name...">
+            <input id="codeInput" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Enter room name...">
             <div class="glow blue"><button id="joinBtn" class="cut jbtn" style="--c:9px;--t:2px"><span class="in">Join
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4l8 8-8 8" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </span></button></div>
           </div>
         </div></div></div>
       </div>
+      <div class="glow blue"><button id="lbAll" class="cut mbtn blue" type="button"><span class="in">
+        <svg class="mi" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h10v2h3a1 1 0 0 1 1 1v1.5c0 2.3-1.6 4.2-3.8 4.7A6 6 0 0 1 13 15.9V18h3v3H8v-3h3v-2.1a6 6 0 0 1-4.2-3.7C4.6 11.7 3 9.8 3 7.5V6a1 1 0 0 1 1-1h3V3z" fill="currentColor"/></svg>
+        <i class="sep"></i>
+        <span class="tx"><b>Leaderboard</b><small>Top players &middot; total kills</small></span>
+        <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4l8 8-8 8" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span></button></div>
+      <button id="setBtn" class="linkbtn" type="button">Settings</button>
     </div>
 
-    <footer class="ver"><span>v0.8.0 &bull; Alpha</span></footer>
+    <footer class="ver"><span>v0.8.6 &bull; Alpha</span></footer>
   </div>
 </section>
 
@@ -120,7 +134,7 @@ body{overflow-x:hidden}
 <section id="lobby" class="screen">
   <div class="lobby-wrap">
     <div class="card code-card">
-      <span class="label">Room code</span>
+      <span class="label">Room name</span>
       <button id="codeBtn" class="code" aria-label="Copy room code"></button>
       <button id="shareBtn" class="btn primary">Share invite link</button>
       <p class="hint" id="shareHint">Friends who open the link land right here.</p>
@@ -136,13 +150,7 @@ body{overflow-x:hidden}
         <div class="modes">
           <button id="mapLab" class="mode" type="button" data-map="lab"><b>Laboratory</b><small>A reactor chamber with catwalks all around it.</small></button>
           <button id="mapStreet" class="mode" type="button" data-map="street"><b>Street</b><small>Rooftops, kiosks and a sewer under the road.</small></button>
-        </div>
-      </div>
-      <div id="modeBox" class="modebox">
-        <span class="label">Game mode</span>
-        <div class="modes">
-          <button id="modeSolo" class="mode" type="button" data-mode="solo"><b>Solo Battle</b><small>Every player for themselves. First to 10 kills wins.</small></button>
-          <button id="modeTeam" class="mode" type="button" data-mode="team"><b>Team Multiplayer</b><small>Survivors vs Hunters, up to 12 players. Get eliminated and you join your killer's team. Most players after 6 minutes wins.</small></button>
+          <button id="mapStairs" class="mode" type="button" data-map="stairs"><b>Staircase</b><small>Stairs, a top corridor, a big hall and a basement with ladders.</small></button>
         </div>
       </div>
       <button id="startBtn" class="btn primary" hidden>Start match</button>
@@ -175,7 +183,6 @@ body{overflow-x:hidden}
       <ol id="board"></ol>
       <div id="feed"></div>
     </div>
-    <div id="teamBar" class="teambar" hidden></div>
     <div id="banner" class="banner" hidden></div>
   </div>
 
@@ -192,6 +199,19 @@ body{overflow-x:hidden}
 
   <div class="rotate"><p>Rotate your phone screen to play</p></div>
 </section>
+
+<!-- SETTINGS SHEET -->
+<div id="setSheet" class="lb-sheet" hidden role="dialog" aria-modal="true" aria-label="Settings">
+  <div class="glow blue"><div class="cut frame lb-panel"><div class="in">
+    <div class="lb-head">
+      <div class="lb-title"><b>Settings</b></div>
+      <button id="setClose" class="lb-all" type="button">Close</button>
+    </div>
+    <div class="set-row"><span>Sound</span><button id="setSound" class="lb-all" type="button">On</button></div>
+    <div class="set-row"><span>Volume</span><input id="setVol" type="range" min="0" max="100" step="5" value="100" aria-label="Volume"></div>
+    <div class="set-row"><span>ALCATRAZ alerts<small>A notification when it opens at 8pm</small></span><button id="setPush" class="lb-all" type="button">Off</button></div>
+  </div></div></div>
+</div>
 
 <!-- LEADERBOARD SHEET -->
 <div id="lbSheet" class="lb-sheet" hidden role="dialog" aria-modal="true" aria-label="Global leaderboard">
@@ -212,6 +232,6 @@ body{overflow-x:hidden}
 <script>window.ROOM_CODE = "{{ room_code }}";</script>
 <script src="/static/socket.io.min.js" onerror="this.onerror=null;var s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js';s.onerror=function(){var t=document.createElement('script');t.src='https://cdn.jsdelivr.net/npm/socket.io-client@4.7.5/dist/socket.io.min.js';document.head.appendChild(t)};document.head.appendChild(s)"></script>
 <script src="/static/skins.js?v=3"></script>
-<script src="/static/game.js?v=15"></script>
+<script src="/static/game.js?v=17"></script>
 </body>
 </html>

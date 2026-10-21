@@ -510,7 +510,7 @@ h2 { margin: 0; font: 400 22px var(--display); }
 .conn.bad { background: var(--danger); }
 .conn.hide { display: none; }
 
-/* ---- game mode picker (lobby) + team HUD */
+/* ---- map picker (lobby) */
 .modebox { display: grid; gap: 8px; }
 .modes { display: grid; gap: 8px; }
 .mode { text-align: left; background: var(--night); color: inherit; border: 2px solid var(--dusk-hi); border-radius: 10px; padding: 10px 12px; font: inherit; cursor: pointer; display: grid; gap: 2px; }
@@ -519,13 +519,22 @@ h2 { margin: 0; font: 400 22px var(--display); }
 .mode.on { border-color: var(--flare); box-shadow: 0 0 0 2px rgba(255, 122, 26, .25); }
 .modebox.locked .mode { cursor: default; }
 .modebox.locked .mode:not(.on) { display: none; }
-.teambar { position: absolute; top: calc(48px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); z-index: 2; display: flex; gap: 10px; align-items: center; padding: 4px 14px; border-radius: 8px; background: rgba(16, 26, 46, .78); font: 700 15px var(--ui); white-space: nowrap; pointer-events: none; }
-.teambar .sv { color: #6db3ff; } .teambar .hn { color: #ff7a73; } .teambar .tm { color: #fff; font-variant-numeric: tabular-nums; }
-.teambar .tm.low { color: #ffd479; }
-.teambar[hidden] { display: none; }
 .over-sub { margin: 0; text-align: center; color: var(--muted); font-size: 17px; }
 .over-sub[hidden] { display: none; }
-#board .tg, #overBoard .tg { color: var(--muted); font-size: 13px; font-weight: 600; }
 
 .opt { color: var(--muted); font-weight: 500; text-transform: none; letter-spacing: 0; }
 .rn-hint { margin: 8px 0 0; color: var(--muted); font-size: 14px; line-height: 1.3; }
+
+/* settings sheet */
+.set-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-top: 1px solid rgba(43, 140, 255, .25); }
+.set-row > span { display: flex; flex-direction: column; gap: 4px; min-width: 0; color: #eaf2ff; font: 700 15px "Chakra Petch", var(--ui); letter-spacing: .08em; text-transform: uppercase; }
+.set-row small { color: #6f8fc4; font: 600 11px/1.3 "Chakra Petch", var(--ui); letter-spacing: .08em; }
+.set-row input[type=range] { flex: 0 1 150px; min-width: 0; accent-color: #2b8cff; }
+.set-row .lb-all { justify-content: center; min-width: 64px; }
+
+/* player cap chips (create card) */
+.cap-lbl { margin-top: 14px; }
+.caprow { display: flex; gap: 8px; }
+.cap { flex: 1; min-width: 0; min-height: 44px; border: 2px solid #1d6fd6; border-radius: 10px; background: rgba(10, 40, 100, .55);
+  color: #4aa8ff; cursor: pointer; font: 700 18px "Chakra Petch", var(--ui); }
+.cap.on { background: #1d6fd6; border-color: #5cb2ff; color: #fff; }
