@@ -220,6 +220,10 @@ def api_leaderboard():
 
 @app.route("/api/alcatraz")
 def api_alcatraz():
+    try:
+        alcatraz_tick()      # also opens it on a visit, in case the server was asleep at 8pm
+    except Exception as exc:
+        print("alcatraz: tick failed:", exc)
     room = rooms.get(alcatraz.NAME)
     resp = jsonify({"open": bool(room), "players": len(room.members) if room else 0})
     resp.headers["Cache-Control"] = "no-store"
@@ -274,7 +278,9 @@ def alcatraz_tick(now=None):
         return
     if room or not pushnotify.claim_night(night):     # already open, or already opened (and emptied) tonight
         return
-    rooms[alcatraz.NAME] = Room(alcatraz.NAME)
+    room = Room(alcatraz.NAME)
+    room.map = "stairs"                                # ALCATRAZ always opens on the Staircase map
+    rooms[alcatraz.NAME] = room
     roomnames.claim(alcatraz.NAME, alcatraz.DEVICE)   # keeps the name reserved so nobody else can create it
     socketio.start_background_task(pushnotify.send_all, "ALCATRAZ is live", "The 8pm room is open. Jump in!", "/r/" + alcatraz.NAME)
 
