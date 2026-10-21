@@ -30,7 +30,7 @@ def clean_device(raw):
 def build_results(entries, winner_id, min_players=MIN_PLAYERS, ranked_win=True):
     """entries: [{"id": slot, "device": str|None, "name": str, "kills": int}] for everyone in the
     finished match. Returns a list of {"device","name","kills","won"} to save, or [] if the match
-    doesn't count (too few players, no winner). ranked_win=False (team matches): kills are saved,
+    doesn't count (too few players, no winner). ranked_win=False: kills are saved,
     nobody is credited a win, and no single winner is needed."""
     if len(entries) < min_players:
         return []

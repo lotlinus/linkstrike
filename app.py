@@ -16,7 +16,9 @@ import time
 from flask import Flask, jsonify, render_template, request
 from flask_socketio import SocketIO, emit, join_room, leave_room
 
+import alcatraz
 import game as G
+import pushnotify
 import rankings
 import roomnames
 
@@ -26,7 +28,7 @@ socketio = SocketIO(app, async_mode="gevent", ping_interval=10, ping_timeout=20)
 
 # ---------------------------------------------------------------- config
 TICK = 30                     # server updates per second
-MAX_PLAYERS = G.MAX_PLAYERS          # Solo Battle; Team Multiplayer allows G.TEAM_MAX_PLAYERS
+MAX_PLAYERS = G.MAX_PLAYERS
 MIN_TO_START = int(os.environ.get("MIN_TO_START", "1"))  # set to 2 for real matches
 
 CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no 0/O/1/I
@@ -46,16 +48,18 @@ class Room:
         self.loop_running = False
         self.game = G.Game()
         self.recorded = False   # this match's result already saved?
-        self.mode = "solo"      # "solo" or "team"; the host picks it in the lobby
         self.map = G.DEFAULT_MAP  # "lab" or "street"; the host picks it in the lobby
+        self.cap = MAX_PLAYERS    # how many players may join; the host picks it when creating the room
 
 
 # ---------------------------------------------------------------- helpers
-def new_code():
-    while True:
-        code = "".join(random.choice(CODE_ALPHABET) for _ in range(5))
-        if code not in rooms and not roomnames.cached(code):
-            return code
+def clean_cap(raw):
+    """The host's player limit: a whole number from 2 up to MAX_PLAYERS; anything else means MAX_PLAYERS."""
+    try:
+        n = int(raw)
+    except (TypeError, ValueError):
+        return MAX_PLAYERS
+    return max(2, min(MAX_PLAYERS, n))
 
 
 def clean_room_name(raw):
@@ -99,7 +103,7 @@ def seat_of(room, device, sid):
 
 def take_over_seat(room, new_sid, old_sid):
     """Same device came back (second tab, refresh, reconnect before the old socket timed out): move its
-    existing player to the new connection. One device = one player per room; kills and team are kept."""
+    existing player to the new connection. One device = one player per room; kills are kept."""
     m = room.members.pop(old_sid)
     room.members[new_sid] = m
     sid_room.pop(old_sid, None)
@@ -114,7 +118,7 @@ def take_over_seat(room, new_sid, old_sid):
 
 def add_player(room, sid, name, device=None):
     used = {m["id"] for m in room.members.values()}
-    slot = next(i for i in range(G.SLOTS) if i not in used)
+    slot = next(i for i in range(MAX_PLAYERS) if i not in used)
     m = {"id": slot, "name": clean_name(name), "device": rankings.clean_device(device)}
     room.members[sid] = m
     room.game.add_player(slot, m["name"])
@@ -125,19 +129,14 @@ def add_player(room, sid, name, device=None):
     return m
 
 
-def room_max(room):
-    return G.TEAM_MAX_PLAYERS if room.mode == "team" else MAX_PLAYERS
-
-
 def lobby_payload(room):
     host = room.members.get(room.host)
     return {
         "code": room.code,
         "state": room.state,
         "host": host["id"] if host else None,
-        "max": room_max(room),
-        "min": G.TEAM_MIN_PLAYERS if room.mode == "team" else MIN_TO_START,
-        "mode": room.mode,
+        "max": room.cap,
+        "min": MIN_TO_START,
         "map": room.map,
         "players": sorted(
             ({"id": m["id"], "name": m["name"]} for m in room.members.values()),
@@ -174,8 +173,7 @@ def save_result(room):
         {"id": m["id"], "device": m["device"], "name": m["name"], "kills": g.players[m["id"]].kills}
         for m in room.members.values() if m["id"] in g.players
     ]
-    # team matches: kills count, but a team win or loss never touches personal stats
-    results = rankings.build_results(entries, g.winner, ranked_win=(g.mode != "team"))
+    results = rankings.build_results(entries, g.winner)
     if results:
         socketio.start_background_task(rankings.record_match, results)
 
@@ -225,13 +223,71 @@ def healthz():
     return "ok"
 
 
+# ---------------------------------------------------------------- push notifications
+@app.route("/sw.js")
+def service_worker():
+    resp = app.send_static_file("sw.js")      # must be served from the site root to cover every page
+    resp.headers["Cache-Control"] = "no-cache"
+    resp.headers["Service-Worker-Allowed"] = "/"
+    return resp
+
+
+@app.route("/api/push/key")
+def push_key():
+    resp = jsonify({"enabled": pushnotify.enabled(), "key": pushnotify.VAPID_PUBLIC})
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+@app.route("/api/push/subscribe", methods=["POST"])
+def push_subscribe():
+    data = request.get_json(silent=True) if (request.content_length or 0) < 4096 else None
+    ok = pushnotify.enabled() and isinstance(data, dict) and pushnotify.add(data.get("sub"), rankings.clean_device(data.get("device")))
+    return jsonify({"ok": bool(ok)}), (200 if ok else 400)
+
+
+@app.route("/api/push/unsubscribe", methods=["POST"])
+def push_unsubscribe():
+    data = request.get_json(silent=True) if (request.content_length or 0) < 4096 else None
+    ep = data.get("endpoint") if isinstance(data, dict) else None
+    if isinstance(ep, str) and len(ep) <= 600:
+        pushnotify.remove(ep)
+    return jsonify({"ok": True})
+
+
+# ---------------------------------------------------------------- ALCATRAZ (opens every night at 8pm Nigeria time)
+def alcatraz_tick(now=None):
+    """Open tonight's ALCATRAZ once (and announce it by push); close it again if nobody came by morning."""
+    night = alcatraz.night(now)
+    room = rooms.get(alcatraz.NAME)
+    if night is None:
+        if room and not room.members:
+            rooms.pop(alcatraz.NAME, None)
+        return
+    if room or not pushnotify.claim_night(night):     # already open, or already opened (and emptied) tonight
+        return
+    rooms[alcatraz.NAME] = Room(alcatraz.NAME)
+    roomnames.claim(alcatraz.NAME, alcatraz.DEVICE)   # keeps the name reserved so nobody else can create it
+    socketio.start_background_task(pushnotify.send_all, "ALCATRAZ is live", "The 8pm room is open. Jump in!", "/r/" + alcatraz.NAME)
+
+
+def alcatraz_loop():
+    roomnames.claim(alcatraz.NAME, alcatraz.DEVICE)
+    while True:
+        try:
+            alcatraz_tick()
+        except Exception as exc:
+            print("alcatraz: tick failed:", exc)
+        socketio.sleep(30)
+
+
 # ---------------------------------------------------------------- sockets
 def enter_room(room, sid, name, device=None):
     """Seat a connection in a room. Returns False (after telling the player why) if the name is taken."""
     dev = rankings.clean_device(device)
     old = seat_of(room, dev, sid)
     if old:
-        m = take_over_seat(room, sid, old)          # keeps the existing name, id, kills and team
+        m = take_over_seat(room, sid, old)          # keeps the existing name, id and kills
     else:
         final, err = unique_name(room, name, sid)
         if err:
@@ -249,15 +305,8 @@ def enter_room(room, sid, name, device=None):
 @socketio.on("create_room")
 def on_create(data):
     data = data or {}
-    wanted = str(data.get("room_name") or "").strip()
-    if not wanted:
-        room = Room(new_code())
-        rooms[room.code] = room
-        enter_room(room, request.sid, data.get("name"), data.get("device"))
-        return
-
-    # a custom room name: owned by the device that first used it, reusable by that device any time
-    name = clean_room_name(wanted)
+    # every room has a name: owned by the device that first used it, reusable by that device any time
+    name = clean_room_name(data.get("room_name"))
     device = rankings.clean_device(data.get("device"))
     if not NAME_RE.match(name):
         emit("error_msg", {"msg": "Room names need 3 to 12 letters or numbers."})
@@ -283,6 +332,7 @@ def on_create(data):
         emit("error_msg", {"msg": f"The room name {name} belongs to someone else. Pick another."})
         return
     room = Room(name)
+    room.cap = clean_cap(data.get("max_players"))
     rooms[name] = room
     enter_room(room, request.sid, data.get("name"), device)
 
@@ -293,18 +343,17 @@ def on_join(data):
     code = str(data.get("code", "")).strip().upper()
     room = rooms.get(code)
     if not room:
-        if roomnames.owner_of(code):
+        if code == alcatraz.NAME:
+            emit("error_msg", {"msg": "ALCATRAZ opens every night at 8pm (Nigeria time).", "gone": True})
+        elif roomnames.owner_of(code):
             emit("error_msg", {"msg": f"{code} is closed right now. Ask the host to open it again.", "gone": True})
         else:
-            emit("error_msg", {"msg": "Room not found. Check the code and try again.", "gone": True})
+            emit("error_msg", {"msg": "Room not found. Check the name and try again.", "gone": True})
         return
     returning = seat_of(room, rankings.clean_device(data.get("device")), request.sid)
-    cap = room_max(room)
+    cap = room.cap
     if not returning and len(room.members) >= cap and request.sid not in room.members:
         emit("error_msg", {"msg": f"This room is full ({cap} of {cap} players)."})
-        return
-    if not returning and room.mode == "team" and room.state == "playing" and room.game.phase == "play" and request.sid not in room.members:
-        emit("error_msg", {"msg": "A team match is already in progress. Try again when it ends."})
         return
     enter_room(room, request.sid, data.get("name"), data.get("device"))
 
@@ -314,31 +363,17 @@ def on_start():
     room = rooms.get(sid_room.get(request.sid))
     if not room or room.host != request.sid or room.state == "playing":
         return
-    need = G.TEAM_MIN_PLAYERS if room.mode == "team" else MIN_TO_START
-    if len(room.members) < need:
-        emit("error_msg", {"msg": f"Need at least {need} players to start."})
+    if len(room.members) < MIN_TO_START:
+        emit("error_msg", {"msg": f"Need at least {MIN_TO_START} players to start."})
         return
     room.state = "playing"
     room.recorded = False
-    room.game.restart(room.mode, room.map)
+    room.game.restart(room.map)
     socketio.emit("start", {"world": G.world_payload(room.map)}, to=room.code)
     broadcast_lobby(room)
     if not room.loop_running:
         room.loop_running = True
         socketio.start_background_task(game_loop, room)
-
-
-@socketio.on("set_mode")
-def on_set_mode(data):
-    room = rooms.get(sid_room.get(request.sid))
-    mode = (data or {}).get("mode")
-    if not room or room.host != request.sid or room.state != "lobby" or mode not in ("solo", "team"):
-        return
-    if mode == "solo" and len(room.members) > MAX_PLAYERS:
-        emit("error_msg", {"msg": f"Solo Battle fits {MAX_PLAYERS} players and {len(room.members)} are in the room."})
-        return
-    room.mode = mode
-    broadcast_lobby(room)
 
 
 @socketio.on("set_map")
@@ -355,11 +390,8 @@ def on_set_map(data):
 def on_rematch():
     room = rooms.get(sid_room.get(request.sid))
     if room and room.host == request.sid and room.game.phase == "over":
-        if room.mode == "team" and len(room.members) < G.TEAM_MIN_PLAYERS:
-            emit("error_msg", {"msg": f"Need at least {G.TEAM_MIN_PLAYERS} players for a team match."})
-            return
         room.recorded = False
-        room.game.restart(room.mode)
+        room.game.restart(room.map)
 
 
 @socketio.on("input")
@@ -389,6 +421,9 @@ def on_leave():
 def on_disconnect():
     remove_player(request.sid)
 
+
+if os.environ.get("LS_NO_SCHEDULER") != "1":          # tests switch the nightly clock off
+    socketio.start_background_task(alcatraz_loop)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "5000"))

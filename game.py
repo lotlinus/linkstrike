@@ -13,14 +13,7 @@ W, H = COLS * TILE, ROWS * TILE
 PW, PH = 28, 54                 # player hitbox
 TARGET_KILLS = 10
 
-# ---- Team Multiplayer (host picks "solo" or "team" in the lobby)
-TEAM_MATCH_S = 360              # match length in seconds (6 min)
-TEAM_MIN_PLAYERS = 2
-SURVIVOR_PCT = 60               # starting share of Survivors; Hunters get the rest (playtest and tune)
-SURVIVORS, HUNTERS = 1, 2       # explicit team ids (0 = no team, used in solo mode)
-MAX_PLAYERS = 6                 # Solo Battle room size (6 skins / colours)
-TEAM_MAX_PLAYERS = 12           # Team Multiplayer room size (one tinted skin per team, so no 6-skin limit)
-SLOTS = max(MAX_PLAYERS, TEAM_MAX_PLAYERS)
+MAX_PLAYERS = 6                 # room size (6 skins / colours)
 
 SPEED = 390                     # px/s sideways
 ACC_GROUND, ACC_AIR = 2800, 1700
@@ -170,12 +163,16 @@ class MapDef:
 
 
 import street_map as _SM  # noqa: E402  (same TILE/COLS/ROWS as above)
+import stairs_map as _ST  # noqa: E402
 
 MAPS = {
     "lab": MapDef("lab", "Laboratory", GRID, PICKUPS, SPAWNS, BACKUP_SPAWNS, PROPS, "lab"),
     "street": MapDef("street", "Street", _SM.GRID, _SM.PICKUPS, _SM.SPAWNS, _SM.BACKUP_SPAWNS, _SM.PROPS, "street", {
         "sky": _SM.SKY, "skyline": _SM.SKYLINE, "skyline_base": _SM.SKYLINE_BASE, "street_row": _SM.GT,
         "beams": [[24 * TILE, 28 * TILE, _SM.GT * TILE, _SM.SEWER_FLOOR * TILE], [52 * TILE, 56 * TILE, _SM.GT * TILE, _SM.SEWER_FLOOR * TILE]],
+    }),
+    "stairs": MapDef("stairs", "Staircase", _ST.GRID, _ST.PICKUPS, _ST.SPAWNS, _ST.BACKUP_SPAWNS, [], "stairs", {
+        "sky": _ST.SKY, "autostep": True, "ladders": _ST.LADDERS, "rails": _ST.RAILS,
     }),
 }
 DEFAULT_MAP = "lab"
@@ -217,7 +214,6 @@ class Player:
         self.fire_t = 0.0
         self.kills = 0
         self.deaths = 0
-        self.team = 0
 
     @property
     def cx(self):
@@ -249,10 +245,6 @@ class Game:
         self.set_map(map_id)
         self.clock = 0.0
         self.spawn_used = {}    # spawn point -> time it was last used
-        self.mode = "solo"      # "solo" (free for all) or "team"
-        self.time_left = 0.0    # team mode: seconds left
-        self.winner_team = -1   # team mode result: SURVIVORS, HUNTERS, or 0 for a draw (-1 while playing)
-        self.final_counts = None
 
     def set_map(self, map_id):
         self.map = MAPS.get(map_id) or MAPS[DEFAULT_MAP]
@@ -269,7 +261,6 @@ class Game:
 
     def remove_player(self, pid):
         self.players.pop(pid, None)
-        self._check_one_team()      # a team that empties out (disconnects) loses at once
 
     def set_input(self, pid, mx, my, aim, fire):
         p = self.players.get(pid)
@@ -282,57 +273,16 @@ class Game:
         p.fire = bool(fire)
 
     # ---- match flow
-    @staticmethod
-    def survivor_count(n):
-        """Starting Survivors for n players: SURVIVOR_PCT rounded half up, at least one of each team."""
-        return max(1, min(n - 1, (n * SURVIVOR_PCT + 50) // 100))
-
-    def team_counts(self):
-        s_ = sum(1 for p in self.players.values() if p.team == SURVIVORS)
-        h_ = sum(1 for p in self.players.values() if p.team == HUNTERS)
-        return s_, h_
-
-    def _assign_teams(self):
-        ps = list(self.players.values())
-        random.shuffle(ps)
-        n_surv = self.survivor_count(len(ps))
-        for i, p in enumerate(ps):
-            p.team = SURVIVORS if i < n_surv else HUNTERS
-
-    def _finish_team(self):
-        """End the team match once: freeze the counts and decide the winner by final population."""
-        if self.phase != "play":
-            return
-        s_, h_ = self.team_counts()
-        self.final_counts = (s_, h_)
-        self.winner_team = SURVIVORS if s_ > h_ else HUNTERS if h_ > s_ else 0
-        self.phase = "over"
-
-    def _check_one_team(self):
-        if self.mode == "team" and self.phase == "play" and self.players:
-            s_, h_ = self.team_counts()
-            if s_ == 0 or h_ == 0:
-                self._finish_team()
-
-    def restart(self, mode=None, map_id=None):
-        if mode in ("solo", "team"):
-            self.mode = mode
+    def restart(self, map_id=None):
         if map_id in MAPS:
             self.set_map(map_id)
         self.phase, self.winner = "play", -1
-        self.winner_team, self.final_counts = -1, None
-        self.time_left = float(TEAM_MATCH_S)
-        if self.mode == "team":
-            self._assign_teams()
-        else:
-            for p in self.players.values():
-                p.team = 0
         self.projs.clear()
         self.pk_up = [True] * len(self.map.pickups)
         self.pk_t = [0.0] * len(self.map.pickups)
         spawns = self.map.spawns[:]
         random.shuffle(spawns)
-        if len(self.players) > len(spawns):             # big team rooms: use the backup points too
+        if len(self.players) > len(spawns):
             extra = self.map.backups[:]
             random.shuffle(extra)
             spawns += extra
@@ -376,10 +326,6 @@ class Game:
     # ---- simulation
     def step(self, dt):
         self.clock += dt
-        if self.mode == "team" and self.phase == "play":
-            self.time_left = max(0.0, self.time_left - dt)
-            if self.time_left <= 0:
-                self._finish_team()
         for p in self.players.values():
             self._update_player(p, dt)
         self._update_pickups(dt)
@@ -418,24 +364,42 @@ class Game:
         p.vy = max(-MAX_UP, min(MAX_FALL, p.vy))
 
         prev_bottom = p.y + PH
+        was_ground = p.ground
         p.ground = False
-        self._move_x(p, p.vx * dt)
+        self._move_x(p, p.vx * dt, was_ground)
         self._move_y(p, p.vy * dt, prev_bottom)
 
-    def _move_x(self, p, dx):
+    def _try_step(self, p, c, was_ground):
+        """Stairs maps only: walking into a one-tile step climbs it (the wall at column c must be just the feet tile)."""
+        if not (was_ground and self.map.extra.get("autostep")):
+            return False
+        top, bot = int(p.y // TILE), int((p.y + PH - 0.01) // TILE)
+        if any(solid(c, r, self.grid) for r in range(top, bot)):
+            return False
+        new_y = bot * TILE - PH
+        r0 = int(new_y // TILE)
+        for cc in range(int(p.x // TILE), int((p.x + PW - 0.01) // TILE) + 1):
+            if any(solid(cc, r, self.grid) for r in range(r0, bot)):
+                return False
+        p.y = new_y
+        return True
+
+    def _move_x(self, p, dx, was_ground=False):
         p.x += dx
         top, bot = int(p.y // TILE), int((p.y + PH - 0.01) // TILE)
         if dx > 0:
             c = int((p.x + PW - 0.01) // TILE)
             for r in range(top, bot + 1):
                 if solid(c, r, self.grid):
-                    p.x, p.vx = c * TILE - PW, 0.0
+                    if not self._try_step(p, c, was_ground):
+                        p.x, p.vx = c * TILE - PW, 0.0
                     break
         elif dx < 0:
             c = int(p.x // TILE)
             for r in range(top, bot + 1):
                 if solid(c, r, self.grid):
-                    p.x, p.vx = (c + 1) * TILE, 0.0
+                    if not self._try_step(p, c, was_ground):
+                        p.x, p.vx = (c + 1) * TILE, 0.0
                     break
 
     def _move_y(self, p, dy, prev_bottom):
@@ -535,9 +499,6 @@ class Game:
         if victim.dead or victim.invuln > 0 or self.phase != "play":
             return
         killer = self.players.get(attacker_id)
-        team_mode = self.mode == "team"
-        if team_mode and killer and killer is not victim and killer.team == victim.team:
-            return                              # no friendly fire in team matches
         victim.hp -= amount
         if victim.hp > 0:
             return
@@ -547,12 +508,8 @@ class Game:
         victim.deaths += 1
         if killer and killer is not victim:
             killer.kills += 1
-            if team_mode:
-                victim.team = killer.team       # converted: respawns on the killer's team
         self.events.append(["k", attacker_id, victim.id, wpn])
-        if team_mode:
-            self._check_one_team()              # everyone converted -> instant win
-        elif killer and killer is not victim and killer.kills >= TARGET_KILLS:
+        if killer and killer is not victim and killer.kills >= TARGET_KILLS:
             self.phase, self.winner = "over", killer.id
 
     def _update_pickups(self, dt):
@@ -578,22 +535,19 @@ class Game:
                 break
 
     # ---- output
-    def _counts_for_snapshot(self):
-        return self.final_counts if self.final_counts else self.team_counts()
-
     def _snapshot(self):
         players = []
         for p in self.players.values():
             flags = (1 if p.ground else 0) | (2 if p.thrust else 0) | (4 if p.dead else 0) \
                 | (8 if p.fire_t > 0 else 0) | (16 if p.invuln > 0 else 0)
             players.append([p.id, round(p.x, 1), round(p.y, 1), round(p.vx), round(p.vy), round(p.aim, 2),
-                            int(math.ceil(p.hp)), p.wpn, flags, p.kills, p.ammo, round(max(0.0, p.dead_t), 1), p.team, p.deaths])
+                            int(math.ceil(p.hp)), p.wpn, flags, p.kills, p.ammo, round(max(0.0, p.dead_t), 1), p.deaths])
         snap = {
             "p": players,
             "b": [[pr.type, round(pr.x), round(pr.y), round(pr.ang, 2)] for pr in self.projs],
             "k": [1 if u else 0 for u in self.pk_up],
             "e": self.events,
-            "m": [self.phase, self.winner, self.mode, int(math.ceil(self.time_left)), *self._counts_for_snapshot(), self.winner_team],
+            "m": [self.phase, self.winner],
         }
         self.events = []
         return snap

@@ -17,3 +17,10 @@ services:
       # Neon connection string (postgresql://...?sslmode=require). Leave unset to run without rankings.
       - key: DATABASE_URL
         sync: false
+      # Browser push for the nightly ALCATRAZ room. Make the keys with: python gen_vapid.py
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: VAPID_SUBJECT
+        sync: false

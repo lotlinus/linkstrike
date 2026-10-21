@@ -1,6 +1,6 @@
 # Link Strike v0.7.2
 
-Jetpack shooter in the browser. Make a room, send the link, fight (Solo Battle: 2-6 players, first to 10 kills; Team Multiplayer: 2-12 players).
+Jetpack shooter in the browser. Make a room, send the link, fight (2-6 players, first to 10 kills). A public ALCATRAZ room opens every night at 8pm (Nigeria time).
 
 ## Controls
 Phone (landscape): left thumb flies (push up = jetpack), right thumb aims and auto-fires.
@@ -54,19 +54,17 @@ add a button with `data-map="..."` in `templates/index.html`.
 Grid letters: `#` wall, `S` slab, `B` building body (solid, sprite drawn over it), `C` crate, `=` one-way ledge with drawn art,
 `-` one-way platform whose sprite is placed by the props list, `.` air.
 
-## Game modes (host picks in the lobby)
-- **Solo Battle**: every player for themselves, first to 10 kills (unchanged).
-- **Team Multiplayer**: Survivors (blue) vs Hunters (red), 6 minute match, 2-12 players (`TEAM_MAX_PLAYERS` in `game.py`).
-  Eliminate an opponent and they respawn on YOUR team. Most players at the timer wins
-  (equal = draw); if one team ends up empty the match ends instantly. No friendly fire,
-  no joining once a team match has started. Kills and deaths persist through every switch;
-  team results never change a player's personal leaderboard stats (kills still count).
-  Tuning knobs are at the top of `game.py`: `TEAM_MATCH_S`, `SURVIVOR_PCT`, `TEAM_MIN_PLAYERS`.
-  Spawn protection reuses the existing `INVULN_S`.
+- **Staircase**: built from the staircase sketch (`stairs_map.py`). A top corridor with a railed walkway, an upper room on each side,
+  mezzanines with 3-tile crawl gaps under the hanging walls, a big hall with a staircase on each side, and a basement under it with ladder
+  holes at both ends, a stepped mound in the middle and a secret room (right ladder only). On this map, walking into a one-tile step
+  climbs it (`autostep` in the map's `extra` in `game.py`); the other maps are unchanged. Tests: `python tests/test_stairs.py`.
+
+## How a match works
+Every player for themselves, first to 10 kills wins. The host picks how many may join (2-6, default 6) when creating the room; 6 is the hard limit (`MAX_PLAYERS` in `game.py`, one skin each). The host picks the map in the lobby.
 
 ## Custom room names
-The host can type a room name (3-12 letters/numbers, e.g. `LOTSARENA`) when creating a room; leave it empty for a random code.
-Friends join with the name or the link `/r/LOTSARENA`. The name belongs to the device that first used it and stays reserved
+Every room needs a name: the host types it (3-12 letters/numbers, e.g. `LOTSARENA`) when creating the room. There are no random codes any more.
+Friends join by typing the name or with the link `/r/LOTSARENA`. The name belongs to the device that first used it and stays reserved
 for 30 days after its last use: when the room empties, only the owner can open it again; others see "closed right now".
 A device keeps one name at a time (choosing a new one releases the old one).
 
@@ -77,5 +75,20 @@ server memory and last until the next restart. Code: `roomnames.py`.
 ## Unique player names
 - No two players in a room can share a name (capitals, spaces, look-alike and invisible characters are ignored, so `Bob`, `bob` and `B o b` are the same). The second one is told to pick another name.
 - A blank name is filled in automatically: `Soldier`, `Soldier 2`, `Soldier 3`...
-- One device = one player per room. If the same device joins a room it's already in (second tab, refresh, reconnect), it takes over its existing seat instead of creating a second player: same name, kills and team, and the old window is disconnected. This works even when the room is full or a team match is running.
+- One device = one player per room. If the same device joins a room it's already in (second tab, refresh, reconnect), it takes over its existing seat instead of creating a second player: same name, kills, and the old window is disconnected. This works even when the room is full.
 - Limit: a device is identified by an id saved in the browser, so someone who clears their site data or uses a private window looks like a new device (they still can't reuse a taken name). Code: `unique_name`, `seat_of` and `take_over_seat` in `app.py`.
+
+## ALCATRAZ (nightly room) and alerts
+- **ALCATRAZ** opens every day at **8pm Nigeria time** (19:00 UTC, no daylight saving). The first person in becomes host. It stays open
+  until everybody has left; if nobody joins, it is closed at 6am. Once it has emptied it does not reopen until the next 8pm.
+  The name is reserved, so nobody else can create a room called ALCATRAZ. Times and window are at the top of `alcatraz.py`.
+- **Alerts** (Settings on the home screen): players can turn on a browser push notification that fires when ALCATRAZ opens, even
+  with the tab closed. Tapping it opens `/r/ALCATRAZ`. Code: `pushnotify.py`, `static/sw.js`.
+  Setup, once: `pip install cryptography`, run `python gen_vapid.py`, then add `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` and
+  `VAPID_SUBJECT` (`mailto:you@example.com`) in Render > Environment. Without them the Alerts switch says they aren't set up.
+  Subscriptions are kept in Postgres (`push_subs`, `push_nights` tables, created automatically); without `DATABASE_URL` they last until a restart.
+  iPhone only supports web push once the game is added to the Home Screen.
+- **Free Render plan sleeps** after ~15 minutes without visitors, and a sleeping server can't open the room or send the alert at 8pm.
+  Keep it awake (a free uptime pinger hitting `/healthz` every 5-10 minutes, or a paid plan). If the server wakes up during the
+  night window, it opens ALCATRAZ and sends the alert right then (once per night).
+- **Settings** sheet: sound on/off, volume, ALCATRAZ alerts. Choices are remembered in the browser.
