@@ -21,6 +21,7 @@ import game as G
 import pushnotify
 import rankings
 import roomnames
+import voice
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-only-change-me")
@@ -269,19 +270,21 @@ def push_unsubscribe():
 
 # ---------------------------------------------------------------- ALCATRAZ (opens every night at 8pm Nigeria time)
 def alcatraz_tick(now=None):
-    """Open tonight's ALCATRAZ once (and announce it by push); close it again if nobody came by morning."""
+    """Keep ALCATRAZ open all night (reopening it if it empties; the push goes out once per night); close it in the morning if nobody is in it."""
     night = alcatraz.night(now)
     room = rooms.get(alcatraz.NAME)
     if night is None:
         if room and not room.members:
             rooms.pop(alcatraz.NAME, None)
         return
-    if room or not pushnotify.claim_night(night):     # already open, or already opened (and emptied) tonight
+    if room:                                          # already open
         return
     room = Room(alcatraz.NAME)
     room.map = "stairs"                                # ALCATRAZ always opens on the Staircase map
     rooms[alcatraz.NAME] = room
     roomnames.claim(alcatraz.NAME, alcatraz.DEVICE)   # keeps the name reserved so nobody else can create it
+    if not pushnotify.claim_night(night):             # announced already (e.g. before a restart): open quietly
+        return
     socketio.start_background_task(pushnotify.send_all, "ALCATRAZ is live", "The 8pm room is open. Jump in!", "/r/" + alcatraz.NAME)
 
 
@@ -429,6 +432,23 @@ def on_ping():
 @socketio.on("leave")
 def on_leave():
     remove_player(request.sid)
+
+
+@socketio.on("voice_token")
+def on_voice_token(_data=None):
+    """A player in a room asks for a voice pass; only members of a live room get one."""
+    code = sid_room.get(request.sid)
+    room = rooms.get(code) if code else None
+    member = room.members.get(request.sid) if room else None
+    if not member:
+        return
+    cfg = voice.settings()
+    if not cfg:
+        emit("voice_error", {"msg": "Voice chat isn't switched on yet."})
+        return
+    url, key, secret = cfg
+    token = voice.make_token(key, secret, "ls-" + room.code, "p%d" % member["id"], member["name"])
+    emit("voice_token", {"url": url, "token": token})
 
 
 @socketio.on("disconnect")

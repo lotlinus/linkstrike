@@ -37,7 +37,7 @@ room = A.rooms["LOTSARENA"]; assert len(room.members) == 1
 a3 = new(); a3.emit("create_room", {"name": "Lot", "device": "device-owner01", "room_name": "LOTSARENA"})
 assert room.host == next(s for s, m in room.members.items() if m["name"] == "Lot") and len(room.members) == 2
 
-# 6. validation + one reserved name per device + random codes avoid reserved names
+# 6. validation + one reserved name per device + a name is required (no more random codes)
 f = new(); f.emit("create_room", {"device": "device-eve0001", "room_name": "ab"})
 assert "3 to 12" in msgs(f, "error_msg")[0]["msg"]
 f.emit("create_room", {"name": "Eve", "device": "device-eve0001", "room_name": "EVEROOM"})
@@ -46,8 +46,14 @@ assert "EVEROOM" not in A.roomnames._mem and "EVEROOM2" in A.roomnames._mem
 g = new(); g.emit("create_room", {"name": "NoDev", "room_name": "NODEVICE"})
 assert "verify your device" in msgs(g, "error_msg")[0]["msg"]
 h = new(); h.emit("create_room", {"name": "Rand", "device": "device-rand001"})
-code = msgs(h, "joined")[0]["code"]; assert len(code) == 5 and not A.roomnames.cached(code)
+assert "3 to 12" in msgs(h, "error_msg")[0]["msg"] and not msgs(h, "joined")
 
-# 7. blank name = old behaviour; solo/team flows untouched
-assert A.rooms[code].mode == "solo"
+# 7. the host picks the player cap (2 to MAX_PLAYERS); junk falls back to MAX_PLAYERS
+assert [A.clean_cap(x) for x in (1, 2, 4, 99, "x", None, "3")] == [2, 2, 4, A.MAX_PLAYERS, A.MAX_PLAYERS, A.MAX_PLAYERS, 3]
+k = new(); k.emit("create_room", {"name": "Kay", "device": "device-kay00001", "room_name": "KAYROOM", "max_players": 3})
+assert A.rooms["KAYROOM"].cap == 3 and msgs(k, "lobby")[-1]["max"] == 3
+for i in (1, 2):
+    p = new(); p.emit("join", {"code": "KAYROOM", "name": "P%d" % i, "device": "device-kp00000%d" % i}); assert msgs(p, "joined")
+late = new(); late.emit("join", {"code": "KAYROOM", "name": "Late", "device": "device-kp000009"})
+assert "full" in msgs(late, "error_msg")[0]["msg"]
 print("ROOM NAME TESTS OK")

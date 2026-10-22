@@ -26,7 +26,7 @@ for bad in (None, "x", {}, {"endpoint": "http://x/y", "keys": good["keys"]}, {"e
     assert pushnotify.clean_sub(bad) is None, bad
 assert pushnotify.claim_night("2099-01-01") is True and pushnotify.claim_night("2099-01-01") is False
 
-# 3. the nightly clock: nothing before 8pm, opens once at 8pm, announces once, never reopens after it empties
+# 3. the nightly clock: nothing before 8pm, opens once at 8pm, announces once, reopens quietly if it empties
 sent = []
 A.pushnotify.send_all = lambda *a: sent.append(a)
 A.rooms.pop("ALCATRAZ", None)
@@ -42,11 +42,14 @@ room = A.rooms["ALCATRAZ"]; assert room.host in room.members
 b = new(); b.emit("create_room", {"name": "Eve", "device": "device-eve0001", "room_name": "ALCATRAZ"})
 assert "belongs to someone else" in msgs(b, "error_msg")[0]["msg"] or "in use" in msgs(b, "error_msg")[0]["msg"]
 
-# 5. everybody leaves -> room is gone for the night and does not reopen; joiners are told when it opens
+# 5. everybody leaves -> the next tick reopens it quietly (no second announcement); late joiners get in
 a.disconnect(); assert "ALCATRAZ" not in A.rooms
-A.alcatraz_tick(at(21, 0)); A.socketio.sleep(0.05); assert "ALCATRAZ" not in A.rooms and len(sent) == 1
+A.alcatraz_tick(at(21, 0)); A.socketio.sleep(0.05); assert "ALCATRAZ" in A.rooms and len(sent) == 1
+assert A.rooms["ALCATRAZ"].map == "stairs"
 c = new(); c.emit("join", {"code": "ALCATRAZ", "name": "Late", "device": "device-late001"})
-assert "8pm" in msgs(c, "error_msg")[0]["msg"]
+assert msgs(c, "joined")[0]["code"] == "ALCATRAZ"
+c.disconnect()
+A.rooms.pop("ALCATRAZ", None)
 
 # 6. next night it opens again; an unjoined room is closed in the morning
 A.alcatraz_tick(at(19, 0, 22)); A.socketio.sleep(0.05)

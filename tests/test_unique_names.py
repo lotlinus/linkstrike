@@ -7,7 +7,7 @@ def msgs(c, name): return [x["args"][0] for x in c.get_received() if x["name"] =
 def new(): return A.socketio.test_client(A.app)
 def lobby_names(room): return sorted(m["name"] for m in room.members.values())
 
-host = new(); host.emit("create_room", {"name": "Bob", "device": "device-bob00001"})
+host = new(); host.emit("create_room", {"name": "Bob", "device": "device-bob00001", "room_name": "BOBROOM"})
 code = msgs(host, "joined")[0]["code"]; room = A.rooms[code]
 
 # 1. same name from a different device is refused: ignoring case, spaces, look-alike and invisible characters
@@ -18,7 +18,7 @@ for tricky in ["bob", "BOB", " b o b ", "Bob\u200b", "\uff22\uff4f\uff42"]:
 assert lobby_names(room) == ["Bob"]
 
 # 2. a refused player isn't pulled out of the room they were already in
-other = new(); other.emit("create_room", {"name": "Zed", "device": "device-zed00001"})
+other = new(); other.emit("create_room", {"name": "Zed", "device": "device-zed00001", "room_name": "ZEDROOM"})
 zcode = msgs(other, "joined")[0]["code"]
 other.emit("join", {"code": code, "name": "bob", "device": "device-zed00001x"})
 assert A.sid_room[A.rooms[zcode].host] == zcode and zcode in A.rooms, "failed join must not eject you from your current room"
@@ -41,19 +41,19 @@ old_msgs = msgs(host, "error_msg"); assert old_msgs and old_msgs[0].get("gone") 
 host.emit("leave"); host.disconnect()                      # the old tab closing must not remove the new seat
 assert len(room.members) == 4 and room.game.players[my_id].kills == 3
 
-# 5. takeover also works when the room is full and while a team match is running
-room.mode = "team"
-while len(room.members) < 12:
+# 5. takeover also works when the room is full and while a match is running
+N = A.MAX_PLAYERS
+while len(room.members) < N:
     c = new(); c.emit("join", {"code": code, "name": f"P{len(room.members)}", "device": f"device-fill{len(room.members):04d}"})
-assert len(room.members) == 12
+assert len(room.members) == N
 tab3 = new(); tab3.emit("join", {"code": code, "name": "x", "device": "device-bob00001"})
-assert msgs(tab3, "joined") and len(room.members) == 12
-tab3.emit("start_game"); assert room.game.phase == "play" and len(room.game.players) == 12
-team_before = room.game.players[my_id].team
+assert msgs(tab3, "joined") and len(room.members) == N
+tab3.emit("start_game"); assert room.game.phase == "play" and len(room.game.players) == N
+kills_before = room.game.players[my_id].kills
 tab4 = new(); tab4.emit("join", {"code": code, "name": "x", "device": "device-bob00001"})
-assert msgs(tab4, "joined") and room.game.players[my_id].team == team_before and len(room.game.players) == 12
+assert msgs(tab4, "joined") and room.game.players[my_id].kills == kills_before and len(room.game.players) == N
 brand_new = new(); brand_new.emit("join", {"code": code, "name": "Newbie", "device": "device-new00001"})
-err = msgs(brand_new, "error_msg")[0]["msg"]; assert "full" in err or "in progress" in err, err   # strangers still can't get in
+err = msgs(brand_new, "error_msg")[0]["msg"]; assert "full" in err, err   # strangers still can't get in
 
 # 6. a name frees up when its owner leaves; the owner-returns path for named rooms checks names too
 t = new(); t.emit("create_room", {"name": "Lot", "device": "device-lot00001", "room_name": "NAMEDROOM"})

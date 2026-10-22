@@ -66,7 +66,7 @@ def test_match_on_street_runs():
     g = G.Game("street")
     for i in range(3):
         g.add_player(i, "P%d" % i)
-    g.restart("solo", "street")
+    g.restart("street")
     assert g.map.id == "street"
     for _ in range(90):
         g.step(1 / 30)

@@ -191,7 +191,7 @@ def test_pickups():
 
 def test_snapshot_shape():
     g = new_game(3); s = g.step(DT)
-    assert len(s["p"]) == 3 and len(s["p"][0]) == 14 and len(s["k"]) == len(G.PICKUPS)
+    assert len(s["p"]) == 3 and len(s["p"][0]) == 13 and len(s["k"]) == len(G.PICKUPS)
     import json; json.dumps(s)
     print("snapshot ok,", len(json.dumps(s)), "bytes")
 
@@ -218,98 +218,30 @@ def test_rankings_offline():
     os.environ.pop("DATABASE_URL")
     print("offline fallback ok")
 
-# ------------------------------------------------------------------ team multiplayer
-def team_game(n):
-    g = G.Game()
-    for i in range(n):
-        g.add_player(i, f"P{i}")
-    g.restart("team")
-    return g
-
+# ------------------------------------------------------------------ match rules
 def kill(g, killer, victim):
     v = g.players[victim]; v.invuln = 0
     g._damage(v, 999, killer, 0)
 
-def test_team_allocation():
-    expect = {2: (1, 1), 3: (2, 1), 4: (2, 2), 5: (3, 2), 6: (4, 2)}   # 6 = room max
-    for n, (s, h) in expect.items():
-        assert team_game(n).team_counts() == (s, h), n
-    for n, s in {8: 5, 10: 6, 12: 7, 15: 9}.items():                  # spec table (beyond today's room size)
-        assert G.Game.survivor_count(n) == s, n
-    print("team allocation ok")
-
-def test_team_conversion_and_stats():
-    g = team_game(4)
-    surv = [p.id for p in g.players.values() if p.team == G.SURVIVORS]
-    hunt = [p.id for p in g.players.values() if p.team == G.HUNTERS]
-    a, b = surv[0], hunt[0]
-    kill(g, a, b)
-    assert g.players[b].team == G.SURVIVORS and g.players[a].team == G.SURVIVORS
-    assert g.players[a].kills == 1 and g.players[b].deaths == 1 and g.team_counts() == (3, 1)
-    kill(g, a, b)                                   # already dead: no double kill / conversion
-    assert g.players[a].kills == 1 and g.players[b].deaths == 1
-    g.players[b].dead = False; g.players[b].invuln = 0
-    kill(g, hunt[1], b)                             # converts back to the Hunters
-    assert g.players[b].team == G.HUNTERS and g.players[b].deaths == 2 and g.players[hunt[1]].kills == 1
-    g.players[b].dead = False
-    assert g.players[b].kills == 0 and g.team_counts() == (2, 2)
-    print("conversion + persistent stats ok")
-
-def test_no_friendly_fire_and_suicide():
-    g = team_game(4)
-    surv = [p.id for p in g.players.values() if p.team == G.SURVIVORS]
-    before = g.players[surv[1]].hp
-    g._damage(g.players[surv[1]], 50, surv[0], 0)
-    assert g.players[surv[1]].hp == before, "teammates must not hurt each other"
-    p = g.players[surv[0]]; p.invuln = 0
-    g._damage(p, 999, surv[0], 2)                   # self-kill: death counts, team stays
-    assert p.deaths == 1 and p.kills == 0 and p.team == G.SURVIVORS
-    print("friendly fire / suicide ok")
-
-def test_team_timeout_and_freeze():
-    g = team_game(4)                                # 2 v 2 -> draw
-    run(g, G.TEAM_MATCH_S + 1)
-    snap = g._snapshot()
-    assert g.phase == "over" and g.winner_team == 0 and snap["m"][4:6] == [2, 2]
-    surv = [p.id for p in g.players.values() if p.team == G.SURVIVORS]
-    hunt = [p.id for p in g.players.values() if p.team == G.HUNTERS]
-    kill(g, surv[0], hunt[0])                       # late event: must change nothing
-    assert g.team_counts() == (2, 2) and g.players[surv[0]].kills == 0 and g.winner_team == 0
-    g2 = team_game(5)                               # 3 v 2 -> Survivors by population
-    run(g2, G.TEAM_MATCH_S + 1)
-    assert g2.winner_team == G.SURVIVORS
-    print("timeout + freeze ok")
-
-def test_total_conversion_and_disconnect():
-    g = team_game(3)                                # 2 v 1
-    surv = [p.id for p in g.players.values() if p.team == G.SURVIVORS]
-    h = next(p.id for p in g.players.values() if p.team == G.HUNTERS)
-    kill(g, surv[0], h)
-    assert g.phase == "over" and g.winner_team == G.SURVIVORS and g.final_counts == (3, 0)
-    g = team_game(3)
-    h = next(p.id for p in g.players.values() if p.team == G.HUNTERS)
-    g.remove_player(h)                              # last Hunter leaves
-    assert g.phase == "over" and g.winner_team == G.SURVIVORS
-    g = team_game(4)
-    g.remove_player(next(iter(g.players)))          # ghost players are gone at once
-    assert sum(g.team_counts()) == 3
-    print("total conversion + disconnect ok")
-
-def test_solo_mode_unchanged():
-    g = new_game(3); g.restart("solo")
-    assert g.mode == "solo" and all(p.team == 0 for p in g.players.values())
+def test_kill_counts_and_match_goes_on():
+    g = new_game(3); g.restart()
     kill(g, 0, 1)
-    assert g.players[0].kills == 1 and g.players[1].team == 0 and g.players[1].deaths == 1
+    assert g.players[0].kills == 1 and g.players[1].deaths == 1
+    kill(g, 0, 1)                                   # already dead: no double kill
+    assert g.players[0].kills == 1 and g.players[1].deaths == 1
+    p = g.players[2]; p.invuln = 0
+    g._damage(p, 999, 2, 2)                         # self-kill: a death, no kill
+    assert p.deaths == 1 and p.kills == 0
     run(g, 5); assert g.phase == "play"
-    print("solo mode ok")
+    print("kills ok")
 
-def test_team_rankings():
+def test_no_win_results_keep_kills():
     import rankings as R
     es = [{"id": i, "device": f"device-000{i}", "name": f"P{i}", "kills": i} for i in range(3)]
     res = R.build_results(es, -1, ranked_win=False)
     assert len(res) == 3 and not any(r["won"] for r in res) and [r["kills"] for r in res] == [0, 1, 2]
     assert R.build_results(es[:2], -1, ranked_win=False) == []
-    print("team rankings ok")
+    print("rankings ok")
 
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
