@@ -1,4 +1,4 @@
-# Link Strike v0.7.2
+# Link Strike v0.8.7
 
 Jetpack shooter in the browser. Make a room, send the link, fight (2-6 players, first to 10 kills). A public ALCATRAZ room opens every night at 8pm (Nigeria time).
 
