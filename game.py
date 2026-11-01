@@ -25,7 +25,7 @@ MAX_UP, MAX_FALL = 400, 820
 MAX_HP = 100
 RESPAWN_S = 3.0
 INVULN_S = 1.5
-SHOULDER_DY = 31                # muzzle origin: this far below the top of the hitbox
+SHOULDER_DY = 12                # muzzle origin: this far below the top of the hitbox
 MUZZLE_LEN = 26
 
 ROCKET_RADIUS = 130

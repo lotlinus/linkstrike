@@ -1,4 +1,4 @@
-# Link Strike v0.8.7
+# Link Strike v1.0 (art + UI update on the v0.9.1 jetpack game)
 
 Jetpack shooter in the browser. Make a room, send the link, fight (2-6 players, first to 10 kills). A public ALCATRAZ room opens every night at 8pm (Nigeria time).
 
@@ -92,3 +92,12 @@ server memory and last until the next restart. Code: `roomnames.py`.
   Keep it awake (a free uptime pinger hitting `/healthz` every 5-10 minutes, or a paid plan). If the server wakes up during the
   night window, it opens ALCATRAZ and sends the alert right then (once per night).
 - **Settings** sheet: sound on/off, volume, ALCATRAZ alerts. Choices are remembered in the browser.
+
+
+## v1.0 changes (look and feel only; game rules are unchanged from v0.9.1)
+- New soldiers: 6 characters cut from the new sprite sheet into `static/img/skin0-5.png` (128px cells; rows: idle, run, fire, hurt, fall, air).
+  Frame counts are in `static/skins.js`. The aim pivot is `PIV`/`SPLIT` in game.js. The muzzle origin moved up (`SHOULDER_DY` 31 -> 12 in game.py) to match the new gun height.
+- New look: `static/v1.css` (charcoal, steel, orange) loaded after style.css. New logo (`img/hero.png`), soldier portraits in the lobby, scoreboard and HUD (`img/avatars/`), map previews in the lobby (`img/map_*.jpg`).
+- Street map: van, keke, moto, dumpster, barrel, crate, cone, tyres, kiosk and Lagos sign replaced with the new Lagos art (same sizes, so collisions are unchanged). The health pickup is now a medkit.
+- Missing `skins.js` added. The map list shows only Laboratory, Lagos Street and Staircase (no Desert Eagle map).
+- Not done yet: timer, magazines/reload, primary weapon choice, new weapon art in the guns the soldiers hold (they all carry the same rifle sprite), new buildings and industrial tileset.
