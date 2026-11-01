@@ -3,12 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<meta name="theme-color" content="#050914">
+<meta name="theme-color" content="#121314">
 <title>Link Strike</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bungee&family=Barlow+Semi+Condensed:wght@500;600;700&family=Chakra+Petch:wght@500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/style.css?v=14">
+<link rel="stylesheet" href="/static/v1.css?v=1">
 <style id="phone-fit">
 *,*::before,*::after{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
@@ -46,7 +47,7 @@ body{overflow-x:hidden}
   <div class="home-wrap">
 
     <h1 class="sr-only">Link Strike</h1>
-    <img class="hero" src="/static/img/hero.jpg?v=4" alt="Link Strike" width="1024" height="494" draggable="false">
+    <img class="hero" src="/static/img/hero.png?v=2" alt="Link Strike" width="900" height="375" draggable="false">
 
     <div class="menu">
       <div class="glow blue"><div class="cut frame"><div class="in">
@@ -119,7 +120,7 @@ body{overflow-x:hidden}
       <button id="setBtn" class="linkbtn" type="button">Settings</button>
     </div>
 
-    <footer class="ver"><span>v0.9.1 &bull; Alpha</span></footer>
+    <footer class="ver"><span>v1.0 &bull; Link Strike</span></footer>
   </div>
 </section>
 
@@ -145,9 +146,9 @@ body{overflow-x:hidden}
       <div id="mapBox" class="modebox">
         <span class="label">Map</span>
         <div class="modes">
-          <button id="mapLab" class="mode" type="button" data-map="lab"><b>Laboratory</b><small>A reactor chamber with catwalks all around it.</small></button>
-          <button id="mapStreet" class="mode" type="button" data-map="street"><b>Street</b><small>Rooftops, kiosks and a sewer under the road.</small></button>
-          <button id="mapStairs" class="mode" type="button" data-map="stairs"><b>Staircase</b><small>Stairs, a top corridor, a big hall and a basement with ladders.</small></button>
+          <button id="mapLab" class="mode" type="button" data-map="lab"><img src="/static/img/map_lab.jpg?v=1" alt=""><span><b>Laboratory</b><small>A reactor chamber with catwalks all around it.</small></span></button>
+          <button id="mapStreet" class="mode" type="button" data-map="street"><img src="/static/img/map_street.jpg?v=2" alt=""><span><b>Lagos Street</b><small>Rooftops, kiosks and a sewer under the road.</small></span></button>
+          <button id="mapStairs" class="mode" type="button" data-map="stairs"><img src="/static/img/map_stairs.jpg?v=1" alt=""><span><b>Staircase</b><small>Stairs, a top corridor, a big hall and a basement with ladders.</small></span></button>
         </div>
       </div>
       <button id="startBtn" class="btn primary" hidden>Start match</button>
@@ -166,8 +167,10 @@ body{overflow-x:hidden}
 
   <div class="hud">
     <div class="hud-left">
-      <div class="hp"><div id="hpFill"></div><span id="hpText">100</span></div>
-      <div id="wpnText">Pistol</div>
+      <div class="hud-id"><img id="hudFace" class="face" alt=""><div class="hud-bars">
+        <div class="hp"><div id="hpFill"></div><span id="hpText">100</span></div>
+        <div class="wpn"><img id="wpnIcon" alt=""><span id="wpnText">Pistol</span></div>
+      </div></div>
     </div>
     <div class="hud-mid">
       <span id="hudRoom"></span>
@@ -239,7 +242,7 @@ body{overflow-x:hidden}
   </div>
 </div>
 <script src="/static/socket.io.min.js" onerror="this.onerror=null;var s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js';s.onerror=function(){var t=document.createElement('script');t.src='https://cdn.jsdelivr.net/npm/socket.io-client@4.7.5/dist/socket.io.min.js';document.head.appendChild(t)};document.head.appendChild(s)"></script>
-<script src="/static/skins.js?v=3"></script>
-<script src="/static/game.js?v=20"></script>
+<script src="/static/skins.js?v=5"></script>
+<script src="/static/game.js?v=22"></script>
 </body>
 </html>
