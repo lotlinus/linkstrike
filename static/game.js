@@ -2,11 +2,15 @@ function start() {
   "use strict";
 
   const $ = (id) => document.getElementById(id);
-  const COLORS = ["#5fa83a", "#d94b45", "#3f8fe0", "#f0b429", "#9b59d0", "#e8eef2"];
+  const COLORS = ["#7fb04a", "#d8dde3", "#ff9a3c", "#e0453f", "#a65fe0", "#3f8fe0"];   // match the 6 soldiers
   const INTERP_MS = 100;           // render this far in the past for smooth motion
   const SPR = 0.85;                // sprite scale (128px frames)
-  const WAIST = 100;               // frame rows above this swing with the aim
-  const TIP = 0.18;                // the baked-in rifle points slightly upward
+  const PIV = 77;                  // aim pivot row in a 128px frame (gun height)
+  const SPLIT = 96;                // frame rows above this swing with the aim; legs stay put
+  const TIP = 0.0;                 // the held weapon points straight ahead
+  // weapon held in the hands (id -> sprite length in frame px, x from the pivot, y below the aim line)
+  const HAND = [{ len: 18, x: 12, y: 5 }, { len: 38, x: -3, y: 5 }, { len: 44, x: -10, y: 3 }];
+  const FLASH_W = [26, 46, 58];   // muzzle flash sprite width in world px, per weapon
   const AIM_LIMIT = 1.3;
   const BULLET_SPEED = [1500, 1300, 760];
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -441,9 +445,11 @@ function start() {
     ul.textContent = "";
     for (const p of lobby.players) {
       const li = document.createElement("li");
-      const dot = document.createElement("span");
-      dot.className = "dot";
-      dot.style.background = COLORS[p.id % COLORS.length];
+      const dot = document.createElement("img");
+      dot.className = "avatar";
+      dot.alt = "";
+      dot.src = "/static/img/avatars/a" + (p.id % 6) + ".jpg?v=1";
+      dot.style.borderColor = COLORS[p.id % COLORS.length];
       const name = document.createElement("span");
       name.textContent = p.name;
       li.append(dot, name);
@@ -577,6 +583,10 @@ function start() {
       $("hpText").textContent = hp;
       const w = world && world.weapons[String(mine[7])];
       $("wpnText").textContent = (w ? w.name : "") + "  " + (mine[10] < 0 ? "\u221E" : mine[10]);
+      const wi = $("wpnIcon"), wsrc = "/static/img/wpn/" + (mine[7] === 1 ? "shotgun" : mine[7] === 2 ? "rocket" : "glock") + ".png?v=1";
+      if (wi && wi.dataset.s !== wsrc) { wi.dataset.s = wsrc; wi.src = wsrc; }
+      const pt = $("hudFace");
+      if (pt && !pt.dataset.s) { pt.dataset.s = "1"; pt.src = "/static/img/avatars/a" + (me % 6) + ".jpg?v=1"; }
       const b = $("banner");
       if ((mine[8] & 4) && phase === "play") {
         b.hidden = false;
@@ -618,10 +628,12 @@ function start() {
     for (const p of rows) {
       const li = document.createElement("li");
       if (p[0] === me) li.className = "me";
-      const dot = document.createElement("span");
-      dot.className = "dot";
-      dot.style.background = COLORS[p[0] % COLORS.length];
-      if (!big) dot.style.width = dot.style.height = "12px";
+      const dot = document.createElement("img");
+      dot.className = "avatar";
+      dot.alt = "";
+      dot.src = "/static/img/avatars/a" + (p[0] % 6) + ".jpg?v=1";
+      dot.style.borderColor = COLORS[p[0] % COLORS.length];
+      dot.style.width = dot.style.height = big ? "30px" : "18px";
       const nm = document.createElement("span");
       nm.className = "nm";
       nm.textContent = nameOf(p[0]);
@@ -888,7 +900,12 @@ function start() {
   }
   const skinImgs = [];
   let explImg = null;
-  for (let i = 0; i < 6; i++) loadImg("/static/img/skin" + i + ".png?v=3").then((im) => { skinImgs[i] = im; });
+  const handImgs = [], flashImgs = [];
+  for (let i = 0; i < 3; i++) {
+    loadImg("/static/img/wpn/hand_" + i + ".png?v=1").then((im) => { handImgs[i] = im; });
+    loadImg("/static/img/wpn/flash_" + i + ".png?v=1").then((im) => { flashImgs[i] = im; });
+  }
+  for (let i = 0; i < 6; i++) loadImg("/static/img/skin" + i + ".png?v=4").then((im) => { skinImgs[i] = im; });
   loadImg("/static/img/explosion.png?v=3").then((im) => { explImg = im; });
   const SK = (window.SKINS && window.SKINS.counts) || {};
 
@@ -897,7 +914,7 @@ function start() {
   const LAB_FILES = ["floor_plain", "floor_hazard", "wall_light", "wall_cable", "wall_warn", "plat_long", "door_open",
     "tank_green", "tank_blue", "tank_small", "term_rack", "term_desk", "term_kiosk", "term_arcade", "term_a",
     "light_cyan", "light_amber", "light_red", "pipe_long", "pipe_bundle", "pk_shotgun", "pk_rocket", "pk_health"];
-  Promise.all(LAB_FILES.map((n) => loadImg("/static/img/lab/" + n + ".png?v=7").then((im) => { if (im) LAB[n] = im; })))
+  Promise.all(LAB_FILES.map((n) => loadImg("/static/img/lab/" + n + ".png?v=8").then((im) => { if (im) LAB[n] = im; })))
     .then(() => { if (tiles && !(world && (world.art === "street" || world.art === "stairs"))) useLabTiles(); });
 
   // Street art (static/img/street): only the sprites the map's props list asks for
@@ -908,7 +925,7 @@ function start() {
       const n = pr[0];
       if (artAsked.has(n)) continue;
       artAsked.add(n);
-      loadImg("/static/img/street/" + n + ".png?v=1").then((im) => { if (im) ART[n] = im; });
+      loadImg("/static/img/street/" + n + ".png?v=2").then((im) => { if (im) ART[n] = im; });
     }
   }
 
@@ -1227,15 +1244,15 @@ function start() {
     const aim = id === me && !dead ? localAim : p[5];
     const facing = Math.cos(aim) >= 0 ? 1 : -1;
     const sid = id % 6;
-    const cnt = SK[sid] || [7, 8, 4, 3, 4];
+    const cnt = SK[sid] || [1, 2, 2, 1, 4, 1];
     const img = skinImgs[sid];
     const ground = !!(flags & 1), thrust = !!(flags & 2), firing = !!(flags & 8);
 
     let row = 0, idx = 0, whole = false;
     if (dead) { row = 4; idx = Math.min(cnt[4] - 1, Math.floor((now - st.deadAt) / 110)); whole = true; }
     else if (now < st.hurtUntil) { row = 3; idx = Math.min(cnt[3] - 1, Math.floor((now - st.hurtAt) / 70)); whole = true; }
-    else if (firing) { row = 2; idx = [0, 1, 3][Math.floor(now / 55) % 3]; }
-    else if (ground && Math.abs(vx) > 20) { row = 1; idx = Math.floor(now / 85) % cnt[1]; }
+    else if (!ground) { row = 5; idx = 0; }
+    else if (Math.abs(vx) > 20) { row = 1; idx = Math.floor(now / 140) % cnt[1]; }
     else { row = 0; idx = Math.floor(now / 140) % cnt[0]; }
 
     ctx.save();
@@ -1250,11 +1267,13 @@ function start() {
     } else {
       let am = facing === 1 ? aim : Math.PI - aim;
       am = clamp(Math.atan2(Math.sin(am), Math.cos(am)), -AIM_LIMIT, AIM_LIMIT);
-      ctx.drawImage(img, idx * 128, row * 128 + WAIST, 128, 128 - WAIST, -64, WAIST - 127, 128, 128 - WAIST);
+      ctx.drawImage(img, idx * 128, row * 128 + SPLIT, 128, 128 - SPLIT, -64, SPLIT - 127, 128, 128 - SPLIT);
       ctx.save();
-      ctx.translate(0, WAIST - 127);
+      ctx.translate(0, PIV - 127);
       ctx.rotate(am + TIP);
-      ctx.drawImage(img, idx * 128, row * 128, 128, WAIST, -64, -WAIST, 128, WAIST);
+      ctx.drawImage(img, idx * 128, row * 128, 128, SPLIT, -64, -PIV, 128, SPLIT);
+      const hw = handImgs[p[7]], hd = HAND[p[7]];
+      if (hw && hd) { const gh = hw.height * hd.len / hw.width; ctx.drawImage(hw, hd.x, hd.y - gh * 0.4, hd.len, gh); }
       ctx.restore();
     }
     ctx.restore();
@@ -1338,6 +1357,8 @@ function start() {
       if (now - f.t0 > 70) { flashes.splice(i, 1); continue; }
       const s = f.w === 0 ? 1 : f.w === 1 ? 1.5 : 1.9;
       ctx.save(); ctx.translate(f.x, f.y); ctx.rotate(f.a);
+      const fi = flashImgs[f.w];
+      if (fi) { const fw = FLASH_W[f.w], fh = fi.height * fw / fi.width; ctx.drawImage(fi, -fw * 0.15, -fh / 2, fw, fh); ctx.restore(); continue; }
       ctx.fillStyle = "#ffb12b";
       ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(12 * s, -7 * s); ctx.lineTo(30 * s, 0); ctx.lineTo(12 * s, 7 * s); ctx.fill();
       ctx.fillStyle = "#fff4c2";
