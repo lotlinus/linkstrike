@@ -118,11 +118,16 @@ def test_combat_and_win():
     assert g.phase == "play" and a.kills == 0 and b.kills == 0
     print("restart ok")
 
+def give(g, p, wid):
+    """Put weapon wid in p's hands with a full magazine (as if it were the chosen primary)."""
+    p.primary = wid
+    g._equip(p)
+
 def test_rocket_and_shotgun():
     g = new_game(2)
     a, b = g.players[0], g.players[1]
     put(a, 14, 29); put(b, 18, 29); b.x = a.x + 250; b.y = a.y
-    a.wpn, a.ammo = 2, 4
+    give(g, a, 2)
     a.aim = 0.0; a.fire = True
     ex = []
     for _ in range(40):
@@ -131,13 +136,13 @@ def test_rocket_and_shotgun():
     assert ex and b.hp < 100, "rocket should explode and hurt"
     a.fire = False
     # self-damage / knockback exists
-    put(a, 14, 29); a.hp = 100; a.invuln = 0; a.cd = 0; a.wpn, a.ammo = 2, 4
+    put(a, 14, 29); a.hp = 100; a.invuln = 0; a.cd = 0; give(g, a, 2)
     a.aim = math.pi / 2; a.fire = True      # shoot floor
     run(g, 0.5)
     assert a.hp < 100, "should hurt yourself with a point-blank rocket"
     # shotgun
     put(a, 14, 29); put(b, 18, 29); b.x = a.x + 120; b.y = a.y; b.hp = 100; b.invuln = 0
-    a.hp = 100; a.wpn, a.ammo = 1, 8; a.aim = 0.0; a.fire = True; a.cd = 0
+    a.hp = 100; give(g, a, 1); a.aim = 0.0; a.fire = True; a.cd = 0
     run(g, 0.15)
     assert b.hp < 70, f"shotgun at 120px should do big damage, hp={b.hp}"
     print("rocket/shotgun ok; ammo left", a.ammo)
@@ -176,12 +181,10 @@ def test_spawn_safety():
     print("spawn safety ok")
 
 def test_pickups():
+    import street_map, stairs_map
+    for pk in (G.PICKUPS, street_map.PICKUPS, stairs_map.PICKUPS):       # health only: no weapon pickups on any map
+        assert pk and all(k == "health" for k, _, _ in pk), pk
     g = new_game(1); p = g.players[0]
-    i = next(k for k, pk in enumerate(G.PICKUPS) if pk[0] == 1)
-    _, c, r = G.PICKUPS[i]
-    put(p, c, r); p.x = c * 40 + 6
-    s = run(g, 0.2)
-    assert p.wpn == 1 and p.ammo == 8 and g.pk_up[i] is False
     p.hp = 50
     h = next(k for k, pk in enumerate(G.PICKUPS) if pk[0] == "health")
     _, c, r = G.PICKUPS[h]; put(p, c, r); p.x = c * 40 + 6
@@ -191,7 +194,7 @@ def test_pickups():
 
 def test_snapshot_shape():
     g = new_game(3); s = g.step(DT)
-    assert len(s["p"]) == 3 and len(s["p"][0]) == 13 and len(s["k"]) == len(G.PICKUPS)
+    assert len(s["p"]) == 3 and len(s["p"][0]) == 15 and len(s["k"]) == len(G.PICKUPS)
     import json; json.dumps(s)
     print("snapshot ok,", len(json.dumps(s)), "bytes")
 
@@ -242,6 +245,109 @@ def test_no_win_results_keep_kills():
     assert len(res) == 3 and not any(r["won"] for r in res) and [r["kills"] for r in res] == [0, 1, 2]
     assert R.build_results(es[:2], -1, ranked_win=False) == []
     print("rankings ok")
+
+def test_catalogue():
+    cat = G.catalogue()
+    root = os.path.join(os.path.dirname(__file__), "..", "static")
+    assert G.SECONDARY == 0 and G.DEFAULT_PRIMARY in G.PRIMARIES and G.SECONDARY not in G.PRIMARIES
+    assert set(cat["weapons"]) == {str(k) for k in G.WEAPONS}
+    cats = {c for c, _ in G.CATEGORIES}
+    for wid in G.PRIMARIES:
+        assert G.WEAPONS[wid]["cat"] in cats, wid
+    for k, w in G.WEAPONS.items():
+        assert w["mag"] >= 1 and w["reload"] > 0 and w["cd"] > 0, k
+        assert os.path.isfile(os.path.join(root, "img", "wpn", w["icon"] + ".png")), w["icon"]
+        assert os.path.isfile(os.path.join(root, "img", "wpn", "hand_" + (str(k) if k < 3 else w["icon"]) + ".png")), k
+        for snd in (w["snd"], w["rsnd"]):
+            assert os.path.isfile(os.path.join(root, "audio", snd + ".wav")), snd
+        assert 0.1 < w["muz"] < 80, (k, w["muz"])
+    for n in ("weapon_switch", "dry_click"):
+        assert os.path.isfile(os.path.join(root, "audio", n + ".wav")), n
+    import json; json.dumps(cat)
+    print("catalogue ok:", len(G.PRIMARIES), "primaries")
+
+def test_magazine_and_auto_reload():
+    g = new_game(2); a, b = g.players[0], g.players[1]
+    put(a, 14, 29); put(b, 18, 29);
+    give(g, a, 4)                                    # M4A1: 30 rounds, 2.0 s reload
+    assert a.wpn == 4 and a.ammo == 30 and a.reload_t == 0
+    a.aim = math.pi / 2; a.fire = True               # shoot at the floor so nobody dies
+    shots = 0
+    for _ in range(int(4.0 / DT)):
+        s = g.step(DT); shots += sum(1 for e in s["e"] if e[0] == "sh" and e[1] == 0)
+        if a.reload_t > 0: break
+    assert shots == 30, f"a 30 round magazine should fire exactly 30 shots, fired {shots}"
+    assert a.ammo == 0 and abs(a.reload_t - G.WEAPONS[4]["reload"]) < 0.1, (a.ammo, a.reload_t)
+    # cannot fire while reloading, even with the trigger held
+    sh = 0; ev = []
+    for _ in range(int(1.0 / DT)):
+        s = g.step(DT); ev += s["e"]; sh += sum(1 for e in s["e"] if e[0] == "sh")
+    assert sh == 0 and a.reload_t > 0.5
+    run(g, 1.2)
+    ev = []
+    for _ in range(4):
+        ev += g.step(DT)["e"]
+    assert a.reload_t == 0 or a.ammo > 0
+    print("magazine + auto reload ok")
+
+def test_reload_events_and_manual_reload():
+    g = new_game(1); a = g.players[0]
+    put(a, 14, 29); give(g, a, 3); a.mags[3] = 10
+    assert g.reload(0) is True and g.reload(0) is False       # second press does nothing
+    s = g.step(DT)
+    assert any(e[0] == "rl" and e[1] == 0 and e[2] == 3 for e in g.events + s["e"]) or a.reload_t > 0
+    ev = []
+    for _ in range(int((G.WEAPONS[3]["reload"] + 0.3) / DT)):
+        ev += g.step(DT)["e"]
+    assert a.ammo == 30 and a.reload_t == 0 and any(e[0] == "rd" for e in ev), (a.ammo, a.reload_t)
+    assert g.reload(0) is False                                # full magazine: nothing to reload
+    print("manual reload ok")
+
+def test_switch_weapons():
+    g = new_game(1); a = g.players[0]
+    put(a, 14, 29); give(g, a, 6)                             # AWM
+    assert a.wpn == 6 and a.slot == 0
+    a.mags[6] = 2; g.reload(0)
+    assert a.reload_t > 0
+    assert g.switch(0) is True and a.wpn == G.SECONDARY and a.slot == 1
+    assert a.reload_t == 0, "swapping cancels the reload"
+    assert a.mags[G.SECONDARY] == 15 and a.mags[6] == 2, "each weapon keeps its own magazine"
+    assert g.switch(0) is False, "swap spam is rate limited"
+    run(g, 0.4)
+    assert g.switch(0, 0) is True and a.wpn == 6 and a.slot == 0
+    run(g, 0.4)
+    assert g.switch(0, 0) is False, "already holding it"
+    # cannot fire right after a swap
+    a.aim = math.pi / 2; a.fire = True; a.cd = 0
+    g.switch(0, 1); assert a.cd >= G.SWITCH_S - 1e-9
+    print("switch ok")
+
+def test_primary_choice_rules():
+    g = new_game(2); a, b = g.players[0], g.players[1]
+    assert a.primary == G.DEFAULT_PRIMARY
+    for bad in (0, 99, -1, "x", None, 3.7 if False else 12):
+        assert g.set_primary(0, bad) is False, bad
+    assert a.primary == G.DEFAULT_PRIMARY
+    assert g.set_primary(0, 6) is True and g.set_primary(1, "10") is True
+    assert a.primary == 6 and b.primary == 10
+    g.restart()                                                # chosen weapons are what you spawn with, with full mags
+    assert a.wpn == 6 and a.ammo == 5 and b.wpn == 10 and b.ammo == 100
+    put(a, 14, 29); a.dead = True; a.dead_t = 0.01; g.step(DT); g.step(DT)
+    assert a.wpn == 6 and a.ammo == 5, "respawn keeps the chosen primary"
+    print("primary choice ok")
+
+def test_every_weapon_fires_and_balances():
+    for wid in G.PRIMARIES + [G.SECONDARY]:
+        g = new_game(2); a, b = g.players[0], g.players[1]
+        put(a, 14, 29); put(b, 18, 29); b.x = a.x + 200; b.y = a.y; b.invuln = 0
+        give(g, a, wid); a.aim = 0.0; a.fire = True
+        s = run(g, 0.4)
+        assert b.hp < 100 or wid == 2, (wid, b.hp)
+        w = G.WEAPONS[wid]
+        if wid not in (1, 2):
+            dps = w["dmg"] / w["cd"]
+            assert 50 <= dps <= 160 or wid == 6, (wid, dps)    # nothing wildly over or under powered (AWM is burst)
+    print("all weapons fire ok")
 
 if __name__ == "__main__":
     for name, fn in list(globals().items()):

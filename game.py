@@ -1,4 +1,4 @@
-"""Link Strike game rules: map, jetpack physics, weapons, pickups, scoring.
+"""Link Strike game rules: map, jetpack physics, weapons (magazines + reload), health pickups, scoring.
 
 No Flask/SocketIO in here, so it can be tested on its own (see tests/test_game.py).
 The server calls Game.step(dt) 30 times a second and broadcasts the snapshot it returns.
@@ -26,18 +26,66 @@ MAX_HP = 100
 RESPAWN_S = 3.0
 INVULN_S = 1.5
 SHOULDER_DY = 12                # muzzle origin: this far below the top of the hitbox
-MUZZLE_LEN = 26
+SPR = 0.85                      # soldier sprite scale on the client (the muzzle distance below is worked out from it)
+SWITCH_S = 0.30                 # time before you can fire after swapping weapons
+SWITCH_GAP = 0.25               # minimum time between two swaps
 
 ROCKET_RADIUS = 130
 ROCKET_DMG = 85
 ROCKET_SELF = 0.6
 ROCKET_KNOCK = 760
 
+# Weapon table. Ids 0-2 keep their old numbers. Every weapon has a magazine and a reload time; reserve ammo is unlimited.
+#   dmg per bullet (shotgun: per pellet), cd = seconds between shots, speed px/s, life = bullet lifetime (range = speed * life),
+#   spread = random aim error in radians, type = bullet look/behaviour (0 bullet, 1 pellet, 2 rocket, 3 sniper round).
+#   show = damage shown in the menu, acc = accuracy shown in the menu (0-100). Menu only: they never affect combat.
+#   len/hx/bore = how the sprite sits in the soldier's hands (frame px; bore = muzzle height as a fraction of the sprite),
+#   fl/flw = muzzle flash picture and its width, snd/rsnd = fire and reload sound files.
 WEAPONS = {
-    0: {"name": "Pistol",  "dmg": 18, "cd": 0.26, "speed": 1500, "ammo": -1, "pellets": 1, "spread": 0.02, "life": 0.9,  "type": 0},
-    1: {"name": "Shotgun", "dmg": 11, "cd": 0.80, "speed": 1300, "ammo": 8,  "pellets": 7, "spread": 0.20, "life": 0.32, "type": 1},
-    2: {"name": "Rocket",  "dmg": 0,  "cd": 1.10, "speed": 760,  "ammo": 4,  "pellets": 1, "spread": 0.0,  "life": 3.0,  "type": 2},
+    0:  {"name": "Glock 17",  "cat": "pistol",  "dmg": 18,  "cd": 0.26,  "speed": 1500, "pellets": 1, "spread": 0.020, "life": 0.9,  "type": 0, "mag": 15,  "reload": 1.2, "show": 18, "acc": 88,
+         "desc": "Reliable sidearm. Everyone carries one.", "icon": "glock", "len": 18, "hx": 12.0, "bore": 0.4, "fl": 0, "flw": 26, "snd": "pistol_fire", "rsnd": "reload_pistol"},
+    1:  {"name": "Shotgun",   "cat": "shotgun", "dmg": 11,  "cd": 0.85,  "speed": 1300, "pellets": 7, "spread": 0.200, "life": 0.32, "type": 1, "mag": 6,   "reload": 2.4, "show": 77, "acc": 30,
+         "desc": "Devastating up close. Six shells and a long pump reload.", "icon": "shotgun", "len": 38, "hx": -3.0, "bore": 0.4, "fl": 1, "flw": 46, "snd": "shotgun_fire", "rsnd": "reload_shotgun"},
+    2:  {"name": "Rocket Launcher", "cat": "heavy", "dmg": 0, "cd": 1.10, "speed": 760,  "pellets": 1, "spread": 0.000, "life": 3.0,  "type": 2, "mag": 1,   "reload": 2.8, "show": 85, "acc": 95,
+         "desc": "One rocket, big blast. It hurts you too if you are close.", "icon": "rocket", "len": 44, "hx": -10.0, "bore": 0.4, "fl": 2, "flw": 58, "snd": "rocket_launch", "rsnd": "reload_rocket"},
+    3:  {"name": "AK-47",     "cat": "assault", "dmg": 15,  "cd": 0.125, "speed": 1700, "pellets": 1, "spread": 0.045, "life": 1.0,  "type": 0, "mag": 30,  "reload": 2.4, "show": 15, "acc": 68,
+         "desc": "Hits hard and kicks harder. Best at mid range.", "icon": "ak47", "len": 48, "hx": 1.6, "bore": 0.166, "fl": 1, "flw": 44, "snd": "rifle_fire", "rsnd": "reload_rifle"},
+    4:  {"name": "M4A1",      "cat": "assault", "dmg": 11,  "cd": 0.095, "speed": 1750, "pellets": 1, "spread": 0.025, "life": 1.0,  "type": 0, "mag": 30,  "reload": 2.0, "show": 11, "acc": 82,
+         "desc": "A versatile and reliable assault rifle. Balanced performance for all combat scenarios.", "icon": "m4a1", "len": 48, "hx": 2.6, "bore": 0.373, "fl": 1, "flw": 44, "snd": "rifle_fire", "rsnd": "reload_rifle"},
+    5:  {"name": "SCAR-L",    "cat": "assault", "dmg": 20,  "cd": 0.16,  "speed": 1750, "pellets": 1, "spread": 0.030, "life": 1.0,  "type": 0, "mag": 25,  "reload": 2.2, "show": 20, "acc": 78,
+         "desc": "Heavy-hitting rifle. Slower than the others but every bullet counts.", "icon": "scar", "len": 50, "hx": 1.0, "bore": 0.38, "fl": 1, "flw": 48, "snd": "rifle_heavy_fire", "rsnd": "reload_rifle"},
+    6:  {"name": "AWM",       "cat": "sniper",  "dmg": 70,  "cd": 1.20,  "speed": 2800, "pellets": 1, "spread": 0.004, "life": 1.1,  "type": 3, "mag": 5,   "reload": 3.2, "show": 70, "acc": 98,
+         "desc": "Two hits kill. Slow bolt, huge range, pinpoint accuracy.", "icon": "awm", "len": 62, "hx": -1.4, "bore": 0.312, "fl": 2, "flw": 58, "snd": "sniper_fire", "rsnd": "reload_sniper"},
+    7:  {"name": "MP5",       "cat": "smg",     "dmg": 9,   "cd": 0.075, "speed": 1500, "pellets": 1, "spread": 0.050, "life": 0.75, "type": 0, "mag": 30,  "reload": 1.9, "show": 9,  "acc": 66,
+         "desc": "Fast and light. Great for close quarters.", "icon": "mp5", "len": 36, "hx": 3.4, "bore": 0.251, "fl": 0, "flw": 32, "snd": "smg_fire", "rsnd": "reload_smg"},
+    8:  {"name": "UMP45",     "cat": "smg",     "dmg": 12,  "cd": 0.105, "speed": 1450, "pellets": 1, "spread": 0.045, "life": 0.8,  "type": 0, "mag": 25,  "reload": 2.1, "show": 12, "acc": 70,
+         "desc": "Steady SMG with solid damage up close.", "icon": "ump45", "len": 36, "hx": 5.2, "bore": 0.238, "fl": 0, "flw": 32, "snd": "smg_fire", "rsnd": "reload_smg"},
+    9:  {"name": "P90",       "cat": "smg",     "dmg": 7,   "cd": 0.064, "speed": 1500, "pellets": 1, "spread": 0.060, "life": 0.75, "type": 0, "mag": 50,  "reload": 2.6, "show": 7,  "acc": 60,
+         "desc": "Huge magazine and a very high rate of fire, but a loose spread.", "icon": "p90", "len": 32, "hx": 1.0, "bore": 0.5, "fl": 0, "flw": 30, "snd": "smg_fire", "rsnd": "reload_smg"},
+    10: {"name": "M249 SAW",  "cat": "heavy",   "dmg": 11,  "cd": 0.085, "speed": 1650, "pellets": 1, "spread": 0.065, "life": 0.95, "type": 0, "mag": 100, "reload": 4.5, "show": 11, "acc": 52,
+         "desc": "100 rounds of suppressing fire. Painfully slow to reload.", "icon": "m249", "len": 56, "hx": 2.6, "bore": 0.27, "fl": 1, "flw": 52, "snd": "rifle_heavy_fire", "rsnd": "reload_lmg"},
+    11: {"name": "MAC-10",    "cat": "smg",     "dmg": 6.5, "cd": 0.055, "speed": 1400, "pellets": 1, "spread": 0.090, "life": 0.55, "type": 0, "mag": 32,  "reload": 1.7, "show": 7,  "acc": 38,
+         "desc": "Melts targets at point blank. Useless at range.", "icon": "mac10", "len": 22, "hx": 6.8, "bore": 0.168, "fl": 0, "flw": 26, "snd": "smg_fire", "rsnd": "reload_smg"},
 }
+SECONDARY = 0                                     # everybody carries the Glock 17 as a sidearm
+PRIMARIES = [3, 4, 5, 7, 8, 9, 11, 6, 1, 10, 2]   # what a player may pick before a match (menu order)
+DEFAULT_PRIMARY = 3
+CATEGORIES = [["assault", "Assault rifles"], ["smg", "SMGs"], ["sniper", "Sniper"], ["shotgun", "Shotguns"], ["heavy", "Heavy"]]
+for _w in WEAPONS.values():                       # muzzle distance from the shoulder, so shots leave the barrel tip
+    _w["muz"] = round((_w["hx"] + _w["len"]) * SPR, 1)
+
+
+def catalogue():
+    """What the client needs to know about every weapon (menu stats, hand sprite placement, sounds)."""
+    out = {}
+    for k, w in WEAPONS.items():
+        out[str(k)] = {
+            "name": w["name"], "cat": w["cat"], "desc": w["desc"], "icon": w["icon"], "hand": ("hand_%d" % k) if k < 3 else ("hand_" + w["icon"]),
+            "dmg": w["show"], "rpm": int(round(60.0 / w["cd"] / 10.0) * 10), "mag": w["mag"], "reload": w["reload"], "acc": w["acc"],
+            "len": w["len"], "hx": w["hx"], "bore": w["bore"], "fl": w["fl"], "flw": w["flw"], "snd": w["snd"], "rsnd": w["rsnd"],
+        }
+    return {"weapons": out, "primaries": PRIMARIES, "cats": CATEGORIES, "default": DEFAULT_PRIMARY, "secondary": SECONDARY}
+
 
 SOLIDS = "#SCB"  # steel, slab, crate, building body (street map: the sprite is drawn over it)
 ONE_WAY = "=-"   # catwalk grate: land on top, fly up through ("-" = same, but a sprite is drawn instead of a grate)
@@ -48,7 +96,7 @@ ONE_WAY = "=-"   # catwalk grate: land on top, fly up through ("-" = same, but a
 # routes around it (roof, left shaft, right shaft, service tunnel underneath).
 #   gates   : left/right doorways into the chamber (3 tiles tall, floor level)
 #   hatches : roof hatch and floor hatch above/below the chamber centre
-#   centre  : catwalk with the two power weapons (rockets)
+#   centre  : catwalk
 def build_map():
     g = [["."] * COLS for _ in range(ROWS)]
 
@@ -98,13 +146,11 @@ def build_map():
 
 GRID = build_map()
 
-# (kind, col, row)  kind: "health" or weapon id. row = floor-standing tile row
+# (kind, col, row)  kind: "health". row = floor-standing tile row. There are no weapon pickups: you choose your weapon before the match.
 PICKUPS = [
     ("health", 20, 22), ("health", 59, 22), ("health", 6, 29), ("health", 73, 29), ("health", 46, 8),
-    (1, 28, 29), (1, 51, 29), (1, 16, 29), (1, 63, 29),      # shotguns: gates + gate ledges
-    (2, 37, 22), (2, 42, 22),                                  # rockets: the two power spots, centre catwalk
 ]
-PICKUP_RESPAWN = {"health": 25.0, 1: 20.0, 2: 30.0}
+PICKUP_RESPAWN = {"health": 25.0}
 
 SPAWNS = [(3, 8), (76, 8), (3, 40), (76, 40), (32, 8), (40, 40)]       # 6 primary spawn points
 BACKUP_SPAWNS = [(8, 16), (9, 29), (71, 16)]                           # used when the primaries are unsafe
@@ -186,7 +232,7 @@ def world_payload(map_id=DEFAULT_MAP):
         "map": m.id, "art": m.art,
         "pickups": [[k, c * TILE + TILE / 2, (r + 1) * TILE - 18] for k, c, r in m.pickups],
         "props": m.props,
-        "weapons": {str(k): {"name": v["name"], "ammo": v["ammo"]} for k, v in WEAPONS.items()},
+        "weapons": catalogue()["weapons"],
     }
     out.update(m.extra)
     return out
@@ -208,12 +254,21 @@ class Player:
         self.dead = False
         self.dead_t = 0.0
         self.invuln = 0.0
-        self.wpn = 0
-        self.ammo = -1
+        self.primary = DEFAULT_PRIMARY   # chosen before the match, locked while it runs
+        self.slot = 0                    # 0 = primary in hand, 1 = Glock 17
+        self.wpn = DEFAULT_PRIMARY       # weapon id in hand
+        self.mags = {}                   # weapon id -> bullets left in its magazine
+        self.reload_t = 0.0              # seconds of reloading left (0 = not reloading)
+        self.sw_t = 0.0                  # swap cooldown
+        self.fire_prev = False
         self.cd = 0.0
         self.fire_t = 0.0
         self.kills = 0
         self.deaths = 0
+
+    @property
+    def ammo(self):
+        return self.mags.get(self.wpn, 0)
 
     @property
     def cx(self):
@@ -261,6 +316,55 @@ class Game:
 
     def remove_player(self, pid):
         self.players.pop(pid, None)
+
+    def set_primary(self, pid, wid):
+        """Choose the primary weapon (the server only lets this happen in the lobby or between matches)."""
+        p = self.players.get(pid)
+        try:
+            wid = int(wid)
+        except (TypeError, ValueError):
+            return False
+        if not p or wid not in PRIMARIES:
+            return False
+        p.primary = wid
+        if self.phase == "over" or p.dead:       # between matches nothing is in play, so show the new weapon at once
+            self._equip(p)
+        return True
+
+    def _equip(self, p):
+        """Primary in hand, full magazines in both weapons."""
+        p.slot, p.wpn, p.reload_t = 0, p.primary, 0.0
+        p.mags = {p.primary: WEAPONS[p.primary]["mag"], SECONDARY: WEAPONS[SECONDARY]["mag"]}
+
+    def reload(self, pid):
+        p = self.players.get(pid)
+        if p and not p.dead and self.phase == "play":
+            return self._begin_reload(p)
+        return False
+
+    def switch(self, pid, slot=None):
+        """Swap between the primary (slot 0) and the Glock (slot 1). slot=None toggles."""
+        p = self.players.get(pid)
+        if not p or p.dead or self.phase != "play" or p.sw_t > 0:
+            return False
+        want = (1 - p.slot) if slot is None else (1 if int(slot) else 0)
+        if want == p.slot:
+            return False
+        p.slot = want
+        p.wpn = p.primary if want == 0 else SECONDARY
+        p.reload_t = 0.0                          # swapping cancels a reload
+        p.sw_t = SWITCH_GAP
+        p.cd = max(p.cd, SWITCH_S)
+        self.events.append(["sw", p.id, p.wpn])
+        return True
+
+    def _begin_reload(self, p):
+        w = WEAPONS[p.wpn]
+        if p.reload_t > 0 or p.mags.get(p.wpn, 0) >= w["mag"]:
+            return False
+        p.reload_t = w["reload"]
+        self.events.append(["rl", p.id, p.wpn, w["reload"]])
+        return True
 
     def set_input(self, pid, mx, my, aim, fire):
         p = self.players.get(pid)
@@ -319,7 +423,8 @@ class Game:
         p.x, p.y = spawn_xy(*spot)
         p.vx = p.vy = 0.0
         p.hp, p.dead, p.dead_t = MAX_HP, False, 0.0
-        p.wpn, p.ammo, p.cd = 0, -1, 0.0
+        self._equip(p)
+        p.cd = 0.0
         p.invuln = 0.0 if first else INVULN_S
         p.ground = False
 
@@ -336,12 +441,25 @@ class Game:
         p.cd = max(0.0, p.cd - dt)
         p.fire_t = max(0.0, p.fire_t - dt)
         p.invuln = max(0.0, p.invuln - dt)
+        p.sw_t = max(0.0, p.sw_t - dt)
         if p.dead:
             p.dead_t -= dt
             if p.dead_t <= 0 and self.phase == "play":
                 self._respawn(p)
         self._physics(p, dt)
-        if not p.dead and self.phase == "play" and p.fire and p.cd <= 0:
+        playing = not p.dead and self.phase == "play"
+        if playing and p.reload_t > 0:           # reloading: the magazine refills when the timer runs out
+            p.reload_t -= dt
+            if p.reload_t <= 0:
+                p.reload_t = 0.0
+                p.mags[p.wpn] = WEAPONS[p.wpn]["mag"]
+                self.events.append(["rd", p.id, p.wpn])
+        elif playing and p.mags.get(p.wpn, 0) <= 0:    # empty (e.g. swapped away mid-reload): start again
+            self._begin_reload(p)
+        if playing and p.fire and not p.fire_prev and p.reload_t > 0:
+            self.events.append(["dry", p.id])     # tried to fire while reloading
+        p.fire_prev = p.fire
+        if playing and p.fire and p.cd <= 0 and p.reload_t <= 0 and p.mags.get(p.wpn, 0) > 0:
             self._shoot(p)
 
     def _physics(self, p, dt):
@@ -422,7 +540,7 @@ class Game:
     def _shoot(self, p):
         w = WEAPONS[p.wpn]
         ox, oy = p.cx, p.y + SHOULDER_DY
-        mx, my = ox + math.cos(p.aim) * MUZZLE_LEN, oy + math.sin(p.aim) * MUZZLE_LEN
+        mx, my = ox + math.cos(p.aim) * w["muz"], oy + math.sin(p.aim) * w["muz"]
         if solid_px(mx, my, self.grid):
             mx, my = ox, oy
         for _ in range(w["pellets"]):
@@ -432,10 +550,10 @@ class Game:
         self.events.append(["sh", p.id, round(mx), round(my), round(p.aim, 2), p.wpn])
         p.cd = w["cd"]
         p.fire_t = 0.15
-        if p.ammo > 0:
-            p.ammo -= 1
-            if p.ammo == 0:
-                p.wpn, p.ammo = 0, -1
+        p.mags[p.wpn] = p.mags.get(p.wpn, 1) - 1
+        if p.mags[p.wpn] <= 0:
+            p.mags[p.wpn] = 0
+            self._begin_reload(p)                 # magazine empty: reload on its own
 
     def _update_projectiles(self, dt):
         keep = []
@@ -505,6 +623,7 @@ class Game:
         victim.hp = 0
         victim.dead, victim.dead_t = True, RESPAWN_S
         victim.fire = False
+        victim.reload_t = 0.0
         victim.deaths += 1
         if killer and killer is not victim:
             killer.kills += 1
@@ -523,12 +642,9 @@ class Game:
             for p in self.players.values():
                 if p.dead or abs(p.cx - px) > PW / 2 + 20 or abs(p.cy - py) > PH / 2 + 20:
                     continue
-                if kind == "health":
-                    if p.hp >= MAX_HP:
-                        continue
-                    p.hp = min(MAX_HP, p.hp + 40)
-                else:
-                    p.wpn, p.ammo = kind, WEAPONS[kind]["ammo"]
+                if p.hp >= MAX_HP:
+                    continue
+                p.hp = min(MAX_HP, p.hp + 40)
                 self.pk_up[i] = False
                 self.pk_t[i] = PICKUP_RESPAWN[kind]
                 self.events.append(["pu", i, p.id])
@@ -541,7 +657,8 @@ class Game:
             flags = (1 if p.ground else 0) | (2 if p.thrust else 0) | (4 if p.dead else 0) \
                 | (8 if p.fire_t > 0 else 0) | (16 if p.invuln > 0 else 0)
             players.append([p.id, round(p.x, 1), round(p.y, 1), round(p.vx), round(p.vy), round(p.aim, 2),
-                            int(math.ceil(p.hp)), p.wpn, flags, p.kills, p.ammo, round(max(0.0, p.dead_t), 1), p.deaths])
+                            int(math.ceil(p.hp)), p.wpn, flags, p.kills, p.ammo, round(max(0.0, p.dead_t), 1), p.deaths,
+                            round(max(0.0, p.reload_t), 2), p.primary])
         snap = {
             "p": players,
             "b": [[pr.type, round(pr.x), round(pr.y), round(pr.ang, 2)] for pr in self.projs],

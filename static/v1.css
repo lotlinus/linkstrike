@@ -86,3 +86,79 @@ h2 { letter-spacing: .04em; text-transform: uppercase; color: var(--amber); }
 .ver::before, .ver::after, footer.ver::before, footer.ver::after { background: #ff7a1a !important; opacity: .5; }
 .hud-left { width: 190px; }
 .hud-id .face { width: 44px; height: 44px; }
+
+/* ---------- v1.1: weapon row, weapon selection sheet, reload HUD, touch buttons ---------- */
+.wpn-row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 8px 12px; background: #101112; border: 1px solid #4a4f55; border-left: 3px solid var(--flare); border-radius: 6px; color: var(--bone); text-align: left; cursor: pointer; font: inherit; }
+.wpn-row[hidden] { display: none; }
+.wpn-row img { width: 84px; height: 34px; object-fit: contain; flex: none; filter: drop-shadow(0 1px 1px #000); }
+.wpn-row span { display: grid; gap: 2px; flex: 1; min-width: 0; }
+.wpn-row small { color: var(--muted); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+.wpn-row b { color: var(--amber); font-size: 16px; text-transform: uppercase; letter-spacing: .04em; }
+.wpn-row i { font-style: normal; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: #1a0d02; background: linear-gradient(180deg, #ffb23a, #e2620a); padding: 6px 10px; border-radius: 4px; font-weight: 700; }
+.wpn-row:active { filter: brightness(.9); }
+#playerList .gun { margin-left: auto; height: 18px; max-width: 54px; object-fit: contain; opacity: .9; }
+#playerList .gun + .tag { margin-left: 8px; }
+
+#magText { margin-left: auto; font: 700 15px var(--ui); color: var(--bone); letter-spacing: .02em; }
+#magText.low { color: var(--danger); }
+.rl { height: 5px; border-radius: 3px; background: rgba(8, 8, 9, .85); border: 1px solid #5b5f64; overflow: hidden; }
+.rl[hidden] { display: none; }
+.rl i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #ffb23a, #ff7a1a); }
+.keys { color: var(--muted); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; font-weight: 600; }
+@media (pointer: coarse) { .keys { display: none; } }
+
+.act { position: absolute; right: calc(10px + env(safe-area-inset-right)); bottom: 108px; z-index: 6; display: flex; flex-direction: column; gap: 12px; }
+.act button { width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; color: var(--bone); background: rgba(20, 21, 22, .78); border: 2px solid rgba(255, 178, 58, .7); touch-action: none; -webkit-tap-highlight-color: transparent; padding: 0; }
+.act button svg { width: 26px; height: 26px; }
+.act button:active, .act button.on { background: rgba(255, 122, 26, .45); border-color: #ffb23a; }
+
+/* weapon selection sheet */
+.ws .ws-panel { width: min(960px, 100%); max-height: 100%; display: flex; flex-direction: column; gap: 10px; padding: 12px; background: linear-gradient(180deg, #202224, #131415); border: 2px solid var(--flare); border-radius: 8px; box-shadow: 0 0 24px rgba(255, 122, 26, .28); overflow-y: auto; }
+.ws-head { display: flex; align-items: center; gap: 12px; }
+.ws-head b { flex: 1; font: 700 clamp(16px, 4.6vw, 22px)/1 var(--display); color: var(--bone); text-transform: uppercase; letter-spacing: .03em; }
+.ws-body { display: grid; gap: 10px; grid-template-columns: 1fr; }
+.ws-cats { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+.ws-cats button { flex: none; padding: 8px 12px; background: #17181a; border: 1px solid #3b4046; border-radius: 4px; color: var(--muted); font: 700 13px var(--ui); text-transform: uppercase; letter-spacing: .05em; cursor: pointer; }
+.ws-cats button.on { color: #1a0d02; background: linear-gradient(180deg, #ffb23a, #e2620a); border-color: #ffb23a; }
+.ws-view { display: grid; gap: 6px; justify-items: center; align-content: center; min-height: 120px; padding: 8px; background: radial-gradient(70% 90% at 50% 55%, rgba(255, 122, 26, .12), transparent 70%), #0f1011; border: 1px solid #343a40; border-radius: 6px; }
+.ws-name { display: grid; gap: 2px; text-align: center; }
+.ws-name b { font: 700 clamp(20px, 5vw, 28px)/1 var(--display); color: var(--bone); text-transform: uppercase; }
+.ws-name small { color: var(--amber); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; font-size: 12px; }
+#wsImg { width: min(100%, 420px); max-height: 140px; object-fit: contain; filter: drop-shadow(0 4px 6px #000); }
+.ws-stats { display: grid; gap: 8px; padding: 10px; background: #101112; border: 1px solid #343a40; border-radius: 6px; align-content: start; }
+.ws-stat { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; font-size: 13px; color: var(--muted); }
+.ws-stat b { color: var(--bone); font-weight: 700; }
+.ws-stat div { grid-column: 1 / -1; height: 6px; background: #2a2d31; border-radius: 3px; overflow: hidden; }
+.ws-stat i { display: block; height: 100%; background: linear-gradient(90deg, #ff7a1a, #ffb23a); }
+.ws-foot { display: grid; gap: 10px; }
+.ws-strip { display: flex; gap: 8px; overflow-x: auto; padding: 4px 2px 6px; }
+.ws-strip button { flex: none; width: 104px; display: grid; gap: 4px; justify-items: center; padding: 6px 6px 5px; background: #17181a; border: 1px solid #3b4046; border-radius: 6px; color: var(--muted); font: 700 12px var(--ui); text-transform: uppercase; cursor: pointer; position: relative; }
+.ws-strip button img { width: 100%; height: 34px; object-fit: contain; }
+.ws-strip button.on { border-color: var(--flare); box-shadow: 0 0 0 2px rgba(255, 122, 26, .35), 0 0 12px rgba(255, 122, 26, .25); color: var(--amber); }
+.ws-strip button.equipped::after { content: ""; position: absolute; top: 5px; right: 5px; width: 8px; height: 8px; border-radius: 50%; background: #5fc24a; }
+.ws-eq { display: grid; gap: 10px; align-items: center; }
+.ws-eq p { margin: 0; color: var(--bone); font-size: 14px; line-height: 1.35; padding: 8px 10px; background: #101112; border-left: 3px solid var(--flare); border-radius: 4px; min-height: 2.7em; }
+.ws-eq .btn { width: 100%; padding: 12px 18px; font-size: 18px; }
+.ws-eq .btn:disabled { filter: grayscale(.7) brightness(.8); }
+@media (orientation: landscape) and (min-width: 640px) {
+  .ws .ws-panel { padding: 10px 14px; gap: 8px; }
+  .ws-body { grid-template-columns: 150px 1fr 220px; grid-template-areas: "cats view stats"; align-items: stretch; }
+  .ws-cats { grid-area: cats; flex-direction: column; overflow: visible; }
+  .ws-view { grid-area: view; }
+  .ws-stats { grid-area: stats; }
+  .ws-foot { grid-template-columns: 1fr 230px; align-items: end; }
+  .ws-eq { grid-template-columns: 1fr; }
+  #wsImg { max-height: 170px; }
+}
+@media (max-height: 460px) {
+  .ws .lb-sheet, .lb-sheet.ws { padding: 6px; }
+  .ws .ws-panel { gap: 6px; padding: 8px 10px; }
+  .ws-view { min-height: 90px; }
+  #wsImg { max-height: 100px; }
+  .ws-eq p { min-height: 0; font-size: 12px; padding: 5px 8px; }
+  .ws-eq .btn { padding: 8px 14px; font-size: 16px; }
+  .ws-strip button img { height: 26px; }
+  .ws-strip button { width: 92px; }
+  .ws-stats { gap: 5px; padding: 8px; }
+  .ws-cats button { padding: 6px 10px; }
+}

@@ -8,11 +8,8 @@ function start() {
   const PIV = 77;                  // aim pivot row in a 128px frame (gun height)
   const SPLIT = 96;                // frame rows above this swing with the aim; legs stay put
   const TIP = 0.0;                 // the held weapon points straight ahead
-  // weapon held in the hands (id -> sprite length in frame px, x from the pivot, y below the aim line)
-  const HAND = [{ len: 18, x: 12, y: 5 }, { len: 38, x: -3, y: 5 }, { len: 44, x: -10, y: 3 }];
-  const FLASH_W = [26, 46, 58];   // muzzle flash sprite width in world px, per weapon
   const AIM_LIMIT = 1.3;
-  const BULLET_SPEED = [1500, 1300, 760];
+  const BULLET_SPEED = [1600, 1300, 760, 2800];   // by bullet type: normal, pellet, rocket, sniper
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const dprNow = () => Math.min(window.devicePixelRatio || 1, 2);
 
@@ -21,6 +18,7 @@ function start() {
   let snaps = [], evq = [], rtt = null, rafId = 0, toastTimer = 0;
   let phase = "play", winner = -1, overShown = false;
   let latest = null;
+  let WC = null, selWpn = null, selCat = null;   // weapon catalogue (stats, art, sounds) and the weapon sheet's selection
   let localAim = 0, myPos = null;
   let shake = 0, hurtFlash = 0, lastFrame = 0, boardKey = "";
   let actx = null, noiseBuf = null, muted = false, volume = 1, ambientG = null;
@@ -31,6 +29,21 @@ function start() {
 
   const socket = io();
   let connectedOnce = false, creating = false;
+
+  // ------------------------------------------------------------ weapon catalogue
+  const wImg = (n) => "/static/img/wpn/" + n + ".png?v=2";
+  const handImgs = {};
+  function useCatalogue(c) {
+    if (!c || !c.weapons) return;
+    WC = c;
+    for (const [id, w] of Object.entries(WC.weapons)) {
+      if (!(id in handImgs)) { handImgs[id] = null; loadImg(wImg(w.hand)).then((im) => { handImgs[id] = im; }); }
+    }
+    if (me != null) renderLobby();
+    renderSheet();
+  }
+  fetch("/api/weapons").then((r) => r.json()).then(useCatalogue).catch(() => {});
+  const posOf = (id) => (latest ? latest.p.find((q) => q[0] === id) : null);
 
   // ------------------------------------------------------------ ui helpers
   function show(name) {
@@ -453,6 +466,12 @@ function start() {
       const name = document.createElement("span");
       name.textContent = p.name;
       li.append(dot, name);
+      const pw = WC && WC.weapons[p.wpn];
+      if (pw) {
+        const gun = document.createElement("img");
+        gun.className = "gun"; gun.alt = pw.name; gun.title = pw.name; gun.src = wImg(pw.icon);
+        li.append(gun);
+      }
       const tags = [];
       if (p.id === lobby.host) tags.push("host");
       if (p.id === me) tags.push("you");
@@ -473,9 +492,92 @@ function start() {
     $("startBtn").textContent = canStart ? "Start match" : "Need " + lobby.min + " players to start";
     $("waitMsg").hidden = isHost;
     boardKey = "";
+    updateWpnRows();
     if (latest) updateHud();
     renderVoicePanel();
   }
+
+  // ------------------------------------------------------------ weapon choice (lobby + between matches)
+  const wpnOpen = () => !$("game").classList.contains("active") || phase === "over";   // never while a match is running
+  const myPrimary = () => { const q = lobby && lobby.players.find((x) => x.id === me); return q ? q.wpn : (WC ? WC.default : 3); };
+  function updateWpnRows() {
+    const w = WC && WC.weapons[myPrimary()];
+    for (const row of document.querySelectorAll(".wpn-row")) {
+      row.hidden = !w || !WC.primaries.length;
+      if (row.hidden) continue;
+      row.querySelector("img").src = wImg(w.icon);
+      row.querySelector("b").textContent = w.name;
+    }
+  }
+  function openWeapons() {
+    if (!WC || !WC.primaries.length) return;
+    if (!wpnOpen()) { toast("Weapons are locked while a match is running."); return; }
+    selWpn = myPrimary();
+    selCat = WC.weapons[selWpn].cat;
+    $("wpnSheet").hidden = false;
+    renderSheet();
+  }
+  function closeWeapons() { $("wpnSheet").hidden = true; }
+  function renderSheet() {
+    if (!WC || $("wpnSheet").hidden || selWpn == null) return;
+    const W = WC.weapons, mine = myPrimary();
+    const tabs = $("wsCats");
+    tabs.textContent = "";
+    for (const [k, label] of WC.cats.filter(([k]) => WC.primaries.some((id) => W[id].cat === k))) {
+      const b = document.createElement("button");
+      b.type = "button"; b.textContent = label; b.className = k === selCat ? "on" : "";
+      b.setAttribute("role", "tab"); b.setAttribute("aria-selected", String(k === selCat));
+      b.onclick = () => {
+        selCat = k;
+        if (W[selWpn].cat !== k) selWpn = WC.primaries.find((id) => W[id].cat === k);
+        renderSheet();
+      };
+      tabs.append(b);
+    }
+    const strip = $("wsStrip");
+    strip.textContent = "";
+    for (const id of WC.primaries.filter((i) => W[i].cat === selCat)) {
+      const b = document.createElement("button");
+      b.type = "button"; b.className = (id === selWpn ? "on " : "") + (id === mine ? "equipped" : "");
+      const im = document.createElement("img"); im.src = wImg(W[id].icon); im.alt = "";
+      const nm = document.createElement("span"); nm.textContent = W[id].name;
+      b.append(im, nm);
+      b.onclick = () => { selWpn = id; renderSheet(); };
+      strip.append(b);
+    }
+    const w = W[selWpn];
+    $("wsName").textContent = w.name;
+    $("wsCat").textContent = (WC.cats.find(([k]) => k === w.cat) || ["", ""])[1];
+    $("wsImg").src = wImg(w.icon); $("wsImg").alt = w.name;
+    $("wsDesc").textContent = w.desc;
+    const rows = [["Damage", w.dmg, w.dmg / 100], ["Fire rate", w.rpm, w.rpm / 1000], ["Magazine", w.mag, Math.log10(w.mag + 1) / 2],
+      ["Reload time", w.reload.toFixed(1) + "s", w.reload / 5], ["Accuracy", w.acc, w.acc / 100]];
+    const box = $("wsStats");
+    box.textContent = "";
+    for (const [label, val, frac] of rows) {
+      const r = document.createElement("div"); r.className = "ws-stat";
+      const l = document.createElement("span"); l.textContent = label;
+      const v = document.createElement("b"); v.textContent = val;
+      const bar = document.createElement("div"), fill = document.createElement("i");
+      fill.style.width = Math.round(clamp(frac, 0.04, 1) * 100) + "%";
+      bar.append(fill); r.append(l, v, bar); box.append(r);
+    }
+    const eq = $("wsEquip");
+    eq.disabled = selWpn === mine;
+    eq.textContent = selWpn === mine ? "Equipped" : "Equip";
+  }
+  for (const r of document.querySelectorAll("[data-open-weapons]")) r.addEventListener("click", openWeapons);
+  $("wsClose").addEventListener("click", closeWeapons);
+  $("wpnSheet").addEventListener("pointerdown", (e) => { if (e.target === $("wpnSheet")) closeWeapons(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeWeapons(); });
+  $("wsEquip").addEventListener("click", () => {
+    if (!WC || selWpn == null || !wpnOpen()) return;
+    socket.emit("choose_weapon", { wpn: selWpn });
+    const q = lobby && lobby.players.find((x) => x.id === me);
+    if (q) q.wpn = selWpn;                    // show it at once; the server confirms with the next lobby update
+    updateWpnRows(); closeWeapons();
+    toast(WC.weapons[selWpn].name + " equipped");
+  });
 
   // ------------------------------------------------------------ socket events
   const connEl = $("conn");
@@ -507,6 +609,8 @@ function start() {
 
   socket.on("start", (d) => {
     world = d.world;
+    if (!WC && world.weapons) useCatalogue({ weapons: world.weapons, primaries: [], cats: [], default: 3, secondary: 0 });
+    closeWeapons();
     loadArt(world);
     snaps = []; evq = []; latest = null;
     pst.clear(); parts.length = 0; expls.length = 0; flashes.length = 0;
@@ -581,10 +685,16 @@ function start() {
       $("hpFill").style.width = hp + "%";
       $("hpFill").style.background = hp > 55 ? "#5fc24a" : hp > 25 ? "#e8b02e" : "#d24a43";
       $("hpText").textContent = hp;
-      const w = world && world.weapons[String(mine[7])];
-      $("wpnText").textContent = (w ? w.name : "") + "  " + (mine[10] < 0 ? "\u221E" : mine[10]);
-      const wi = $("wpnIcon"), wsrc = "/static/img/wpn/" + (mine[7] === 1 ? "shotgun" : mine[7] === 2 ? "rocket" : "glock") + ".png?v=1";
-      if (wi && wi.dataset.s !== wsrc) { wi.dataset.s = wsrc; wi.src = wsrc; }
+      const w = WC && WC.weapons[mine[7]];
+      $("wpnText").textContent = w ? w.name : "";
+      const mg = $("magText"), rem = mine[13] || 0;
+      mg.textContent = w ? mine[10] + "/" + w.mag : "";
+      mg.classList.toggle("low", !!w && mine[10] <= Math.max(1, w.mag * 0.25));
+      const rb = $("rlBar");
+      rb.hidden = !(w && rem > 0);
+      if (!rb.hidden) $("rlFill").style.width = Math.round(clamp(1 - rem / w.reload, 0, 1) * 100) + "%";
+      const wi = $("wpnIcon"), wsrc = w ? wImg(w.icon) : "";
+      if (wi && wsrc && wi.dataset.s !== wsrc) { wi.dataset.s = wsrc; wi.src = wsrc; }
       const pt = $("hudFace");
       if (pt && !pt.dataset.s) { pt.dataset.s = "1"; pt.src = "/static/img/avatars/a" + (me % 6) + ".jpg?v=1"; }
       const b = $("banner");
@@ -602,6 +712,7 @@ function start() {
     }
     if (phase === "over" && !overShown) {
       overShown = true;
+      updateWpnRows();
       fillBoard($("overBoard"), rows, true);
       const sub = $("overSub");
       sub.hidden = true;
@@ -657,7 +768,8 @@ function start() {
       const b = document.createElement("span");
       b.style.color = colorOf(victim);
       b.textContent = nameOf(victim);
-      mid.textContent = [" shot ", " shredded ", " rocketed "][wpn] || " got ";
+      const kd = WC && WC.weapons[wpn];
+      mid.textContent = wpn === 2 ? " rocketed " : kd && kd.cat === "shotgun" ? " shredded " : kd && kd.cat === "sniper" ? " sniped " : " shot ";
       row.append(a, mid, b);
     }
     const feed = $("feed");
@@ -695,14 +807,16 @@ function start() {
   const SND = {};
   const SND_FILES = ["pistol_fire", "shotgun_fire", "rocket_launch", "rocket_explosion", "hit_marker", "player_hit",
     "player_death", "respawn", "kill_confirm", "weapon_pickup", "footstep_metal", "land", "button_click", "button_error",
-    "room_created", "player_joined", "player_left", "match_start", "victory", "defeat", "menu_ambient"];
+    "room_created", "player_joined", "player_left", "match_start", "victory", "defeat", "menu_ambient",
+    "rifle_fire", "rifle_heavy_fire", "smg_fire", "sniper_fire", "reload_pistol", "reload_rifle", "reload_smg", "reload_lmg",
+    "reload_shotgun", "reload_rocket", "reload_sniper", "weapon_switch", "dry_click"];
   let sndLoading = false, ambient = null;
   function loadSounds() {
     const a = ac();
     if (!a || sndLoading) return;
     sndLoading = true;
     for (const n of SND_FILES) {
-      fetch("/static/audio/" + n + ".wav?v=6")
+      fetch("/static/audio/" + n + ".wav?v=7")
         .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject()))
         .then((buf) => new Promise((res, rej) => a.decodeAudioData(buf, res, rej)))
         .then((b) => { SND[n] = b; if (n === "menu_ambient") syncAmbient(); })
@@ -768,13 +882,24 @@ function start() {
   const near = (x, y) => (x == null ? 1 : Math.max(0.1, 1 - Math.hypot(x - cam.x, y - cam.y) / 1400));
   const SFX = {
     shot: (w, x, y) => {
-      const v = near(x, y);
-      const n = ["pistol_fire", "shotgun_fire", "rocket_launch"][w];
-      if (n && play(n, 0.55 * v, 0.96 + Math.random() * 0.08)) return;
+      const v = near(x, y), d = WC && WC.weapons[w];
+      const n = d ? d.snd : ["pistol_fire", "shotgun_fire", "rocket_launch"][w];
+      const quick = d && d.rpm > 400;          // rapid-fire guns play a little quieter so a long burst does not clip
+      if (n && play(n, (quick ? 0.42 : 0.55) * v, 0.96 + Math.random() * 0.08)) return;
       if (w === 0) { noise(0.09, 4500, 800, 0.35 * v, "highpass"); tone(380, 90, 0.08, 0.12 * v, "square"); }
       else if (w === 1) { noise(0.2, 3000, 300, 0.6 * v); tone(140, 45, 0.16, 0.25 * v, "sawtooth"); }
-      else { noise(0.35, 1200, 200, 0.5 * v); tone(200, 60, 0.3, 0.2 * v, "sawtooth"); }
+      else if (w === 2) { noise(0.35, 1200, 200, 0.5 * v); tone(200, 60, 0.3, 0.2 * v, "sawtooth"); }
+      else { noise(0.12, 3800, 500, 0.4 * v); tone(220, 70, 0.1, 0.15 * v, "square"); }
     },
+    reload: (wid, secs, mine, x, y) => {
+      const d = WC && WC.weapons[wid];
+      if (!d) return;
+      const v = mine ? 0.8 : 0.5 * near(x, y), b = SND[d.rsnd];
+      if (b && play(d.rsnd, v, clamp(b.duration / Math.max(0.5, secs), 0.8, 1.35))) return;   // sound ends as the reload does
+      tone(300, 200, 0.05, 0.12 * v, "square"); tone(520, 420, 0.06, 0.12 * v, "square", Math.max(0.1, secs - 0.12));
+    },
+    swap: (mine, x, y) => { const v = mine ? 0.7 : 0.4 * near(x, y); if (!play("weapon_switch", v)) tone(420, 300, 0.05, 0.1 * v, "square"); },
+    dry: () => { if (!play("dry_click", 0.7)) tone(900, 600, 0.02, 0.1, "square"); },
     boom: (x, y) => {
       const v = near(x, y);
       if (play("rocket_explosion", 0.75 * v)) return;
@@ -805,8 +930,11 @@ function start() {
     ArrowLeft: "l", KeyA: "l", ArrowRight: "r", KeyD: "r",
     ArrowUp: "u", KeyW: "u", Space: "u", ArrowDown: "d", KeyS: "d",
   };
+  const act = (a) => { if (socket.connected && $("game").classList.contains("active") && phase === "play") socket.emit("act", { a }); };
+  const ACTKEYS = { KeyR: "reload", KeyQ: "switch", Digit1: "slot0", Digit2: "slot1" };
   function onKey(e, down) {
     if (!$("game").classList.contains("active")) return;
+    if (ACTKEYS[e.code]) { e.preventDefault(); if (down && !e.repeat) act(ACTKEYS[e.code]); return; }
     const k = KEYMAP[e.code];
     if (!k) return;
     e.preventDefault();
@@ -827,6 +955,12 @@ function start() {
   });
   window.addEventListener("pointerup", (e) => { if (e.pointerType === "mouse") mouse.down = false; });
   document.addEventListener("contextmenu", (e) => e.preventDefault());
+  canvas.addEventListener("wheel", (e) => { e.preventDefault(); act("switch"); }, { passive: false });
+  for (const [id, a] of [["btnReload", "reload"], ["btnSwap", "switch"]]) {      // touch buttons
+    const b = $(id);
+    b.addEventListener("pointerdown", (e) => { e.preventDefault(); e.stopPropagation(); b.classList.add("on"); act(a); });
+    for (const ev of ["pointerup", "pointercancel", "pointerleave"]) b.addEventListener(ev, () => b.classList.remove("on"));
+  }
 
   // floating thumbsticks (left = fly, right = aim + auto-fire)
   function makePad(zoneId, baseId, knobId, R, home, onMove, onEnd) {
@@ -900,11 +1034,8 @@ function start() {
   }
   const skinImgs = [];
   let explImg = null;
-  const handImgs = [], flashImgs = [];
-  for (let i = 0; i < 3; i++) {
-    loadImg("/static/img/wpn/hand_" + i + ".png?v=1").then((im) => { handImgs[i] = im; });
-    loadImg("/static/img/wpn/flash_" + i + ".png?v=1").then((im) => { flashImgs[i] = im; });
-  }
+  const flashImgs = [];
+  for (let i = 0; i < 3; i++) loadImg("/static/img/wpn/flash_" + i + ".png?v=1").then((im) => { flashImgs[i] = im; });
   for (let i = 0; i < 6; i++) loadImg("/static/img/skin" + i + ".png?v=4").then((im) => { skinImgs[i] = im; });
   loadImg("/static/img/explosion.png?v=3").then((im) => { explImg = im; });
   const SK = (window.SKINS && window.SKINS.counts) || {};
@@ -1272,8 +1403,14 @@ function start() {
       ctx.translate(0, PIV - 127);
       ctx.rotate(am + TIP);
       ctx.drawImage(img, idx * 128, row * 128, 128, SPLIT, -64, -PIV, 128, SPLIT);
-      const hw = handImgs[p[7]], hd = HAND[p[7]];
-      if (hw && hd) { const gh = hw.height * hd.len / hw.width; ctx.drawImage(hw, hd.x, hd.y - gh * 0.4, hd.len, gh); }
+      const wd = WC && WC.weapons[p[7]], hw = wd && handImgs[p[7]];
+      if (hw) {
+        const gh = hw.height * wd.len / hw.width;
+        if (p[13] > 0) {                       // reloading: the gun dips and wobbles in the hands
+          ctx.translate(16, 4); ctx.rotate(0.5 + 0.07 * Math.sin(now / 80)); ctx.translate(-16, -4);
+        }
+        ctx.drawImage(hw, wd.hx, 4 - gh * wd.bore, wd.len, gh);
+      }
       ctx.restore();
     }
     ctx.restore();
@@ -1293,6 +1430,11 @@ function start() {
     const hp = p[6];
     ctx.fillStyle = hp > 55 ? "#5fc24a" : hp > 25 ? "#e8b02e" : "#d24a43";
     ctx.fillRect(cx - 18, y - 9, 36 * hp / 100, 3);
+    const rd = WC && WC.weapons[p[7]];
+    if (p[13] > 0 && rd) {                     // reload progress above the head
+      ctx.fillStyle = "rgba(10,18,32,.8)"; ctx.fillRect(cx - 19, y - 4, 38, 4);
+      ctx.fillStyle = "#ffb23a"; ctx.fillRect(cx - 18, y - 3, 36 * clamp(1 - p[13] / rd.reload, 0, 1), 2);
+    }
     if (id === me) {
       ctx.fillStyle = "#ff7a1a";
       ctx.beginPath(); ctx.moveTo(cx - 6, y - 36); ctx.lineTo(cx + 6, y - 36); ctx.lineTo(cx, y - 28); ctx.fill();
@@ -1333,6 +1475,14 @@ function start() {
       if (e[1] === me && e[2] !== me) SFX.kill();
     } else if (k === "pu") {
       if (e[2] === me) SFX.pickup();
+    } else if (k === "rl") {
+      const q = posOf(e[1]);
+      SFX.reload(e[2], e[3], e[1] === me, q && q[1], q && q[2]);
+    } else if (k === "sw") {
+      const q = posOf(e[1]);
+      SFX.swap(e[1] === me, q && q[1], q && q[2]);
+    } else if (k === "dry") {
+      if (e[1] === me) SFX.dry();
     }
   }
 
@@ -1355,10 +1505,11 @@ function start() {
     for (let i = flashes.length - 1; i >= 0; i--) {
       const f = flashes[i];
       if (now - f.t0 > 70) { flashes.splice(i, 1); continue; }
-      const s = f.w === 0 ? 1 : f.w === 1 ? 1.5 : 1.9;
+      const fd = WC && WC.weapons[f.w], fx = fd ? fd.fl : Math.min(2, f.w);
+      const s = fx === 0 ? 1 : fx === 1 ? 1.5 : 1.9;
       ctx.save(); ctx.translate(f.x, f.y); ctx.rotate(f.a);
-      const fi = flashImgs[f.w];
-      if (fi) { const fw = FLASH_W[f.w], fh = fi.height * fw / fi.width; ctx.drawImage(fi, -fw * 0.15, -fh / 2, fw, fh); ctx.restore(); continue; }
+      const fi = flashImgs[fx];
+      if (fi) { const fw = fd ? fd.flw : [26, 46, 58][fx], fh = fi.height * fw / fi.width; ctx.drawImage(fi, -fw * 0.15, -fh / 2, fw, fh); ctx.restore(); continue; }
       ctx.fillStyle = "#ffb12b";
       ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(12 * s, -7 * s); ctx.lineTo(30 * s, 0); ctx.lineTo(12 * s, 7 * s); ctx.fill();
       ctx.fillStyle = "#fff4c2";
@@ -1421,6 +1572,11 @@ function start() {
         ctx.beginPath(); ctx.moveTo(-14, -3); ctx.lineTo(-26 - Math.random() * 8, 0); ctx.lineTo(-14, 3); ctx.fill();
         ctx.restore();
         if (Math.random() < 0.7) addPart(x - Math.cos(ang) * 16, y - Math.sin(ang) * 16, 0, 0, 0.5, 6, "#aeb6c4", -10, true);
+      } else if (type === 3) {
+        ctx.strokeStyle = "rgba(255,226,150,.5)"; ctx.lineWidth = 6; ctx.lineCap = "round";
+        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - Math.cos(ang) * 60, y - Math.sin(ang) * 60); ctx.stroke();
+        ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - Math.cos(ang) * 38, y - Math.sin(ang) * 38); ctx.stroke();
       } else if (type === 1) {
         ctx.fillStyle = "#ffe08a"; ctx.fillRect(x - 1.5, y - 1.5, 3, 3);
       } else {

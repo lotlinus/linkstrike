@@ -144,11 +144,9 @@ def build():
 
 GRID, PROPS = build()
 
-# (kind, col, row)  kind: "health" or weapon id. row = the tile row the pickup stands on (surface is row+1)
+# (kind, col, row)  kind: "health" (no weapon pickups). row = the tile row the pickup stands on (surface is row+1)
 PICKUPS = [
     ("health", 5, 20), ("health", 74, 19), ("health", 37, 24), ("health", 25, 41), ("health", 54, 41), ("health", 41, 34),
-    (1, 9, 28), (1, 68, 28), (1, 20, 36), (1, 59, 36), (1, 5, 37), (1, 74, 37),      # shotguns
-    (2, 39, 11), (2, 40, 11), (2, 38, 34),                                              # rockets: centre perch + the sewer ledge
 ]
 SPAWNS = [(3, 20), (75, 19), (17, 21), (61, 20), (6, 41), (73, 41)]
 BACKUP_SPAWNS = [(39, 24), (12, 30), (66, 30)]

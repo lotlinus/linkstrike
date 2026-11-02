@@ -130,6 +130,16 @@ def add_player(room, sid, name, device=None):
     return m
 
 
+def primary_of(room, slot):
+    p = room.game.players.get(slot)
+    return p.primary if p else G.DEFAULT_PRIMARY
+
+
+def weapon_choice_open(room):
+    """Primary weapons can be chosen in the lobby and between matches, never while a match is running."""
+    return room.state == "lobby" or room.game.phase == "over"
+
+
 def lobby_payload(room):
     host = room.members.get(room.host)
     return {
@@ -140,9 +150,10 @@ def lobby_payload(room):
         "min": MIN_TO_START,
         "map": room.map,
         "players": sorted(
-            ({"id": m["id"], "name": m["name"]} for m in room.members.values()),
+            ({"id": m["id"], "name": m["name"], "wpn": primary_of(room, m["id"])} for m in room.members.values()),
             key=lambda m: m["id"],
         ),
+        "wpn_open": weapon_choice_open(room),
     }
 
 
@@ -229,6 +240,11 @@ def api_alcatraz():
     resp = jsonify({"open": bool(room), "players": len(room.members) if room else 0})
     resp.headers["Cache-Control"] = "no-store"
     return resp
+
+
+@app.route("/api/weapons")
+def api_weapons():
+    return jsonify(G.catalogue())
 
 
 @app.route("/healthz")
@@ -401,6 +417,38 @@ def on_set_map(data):
         return
     room.map = map_id
     broadcast_lobby(room)
+
+
+@socketio.on("choose_weapon")
+def on_choose_weapon(data):
+    room = rooms.get(sid_room.get(request.sid))
+    m = room.members.get(request.sid) if room else None
+    if not m:
+        return
+    if not weapon_choice_open(room):
+        emit("error_msg", {"msg": "Weapons are locked while a match is running."})
+        return
+    if room.game.set_primary(m["id"], (data or {}).get("wpn")):
+        broadcast_lobby(room)
+
+
+@socketio.on("act")
+def on_act(data):
+    """In-match actions: reload, swap between primary and Glock (or go straight to one of them)."""
+    room = rooms.get(sid_room.get(request.sid))
+    m = room.members.get(request.sid) if room else None
+    if not m:
+        return
+    a = (data or {}).get("a")
+    g = room.game
+    if a == "reload":
+        g.reload(m["id"])
+    elif a == "switch":
+        g.switch(m["id"])
+    elif a == "slot0":
+        g.switch(m["id"], 0)
+    elif a == "slot1":
+        g.switch(m["id"], 1)
 
 
 @socketio.on("rematch")
