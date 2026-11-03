@@ -1,0 +1,22 @@
+{
+ "name": "Link Strike",
+ "short_name": "Link Strike",
+ "start_url": "/",
+ "scope": "/",
+ "display": "fullscreen",
+ "orientation": "landscape",
+ "background_color": "#121314",
+ "theme_color": "#121314",
+ "icons": [
+  {
+   "src": "/static/img/icon-192.png",
+   "sizes": "192x192",
+   "type": "image/png"
+  },
+  {
+   "src": "/static/img/icon-512.png",
+   "sizes": "512x512",
+   "type": "image/png"
+  }
+ ]
+}

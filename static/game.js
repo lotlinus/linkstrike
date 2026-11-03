@@ -8,8 +8,11 @@ function start() {
   const PIV = 77;                  // aim pivot row in a 128px frame (gun height)
   const SPLIT = 96;                // frame rows above this swing with the aim; legs stay put
   const TIP = 0.0;                 // the held weapon points straight ahead
+  // weapon held in the hands (id -> sprite length in frame px, x from the pivot, y below the aim line)
+  const HAND = [{ len: 18, x: 12, y: 5 }, { len: 38, x: -3, y: 5 }, { len: 44, x: -10, y: 3 }];
+  const FLASH_W = [26, 46, 58];   // muzzle flash sprite width in world px, per weapon
   const AIM_LIMIT = 1.3;
-  const BULLET_SPEED = [1600, 1300, 760, 2800];   // by bullet type: normal, pellet, rocket, sniper
+  const BULLET_SPEED = [1500, 1300, 760];
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const dprNow = () => Math.min(window.devicePixelRatio || 1, 2);
 
@@ -18,7 +21,6 @@ function start() {
   let snaps = [], evq = [], rtt = null, rafId = 0, toastTimer = 0;
   let phase = "play", winner = -1, overShown = false;
   let latest = null;
-  let WC = null, selWpn = null, selCat = null;   // weapon catalogue (stats, art, sounds) and the weapon sheet's selection
   let localAim = 0, myPos = null;
   let shake = 0, hurtFlash = 0, lastFrame = 0, boardKey = "";
   let actx = null, noiseBuf = null, muted = false, volume = 1, ambientG = null;
@@ -30,24 +32,10 @@ function start() {
   const socket = io();
   let connectedOnce = false, creating = false;
 
-  // ------------------------------------------------------------ weapon catalogue
-  const wImg = (n) => "/static/img/wpn/" + n + ".png?v=2";
-  const handImgs = {};
-  function useCatalogue(c) {
-    if (!c || !c.weapons) return;
-    WC = c;
-    for (const [id, w] of Object.entries(WC.weapons)) {
-      if (!(id in handImgs)) { handImgs[id] = null; loadImg(wImg(w.hand)).then((im) => { handImgs[id] = im; }); }
-    }
-    if (me != null) renderLobby();
-    renderSheet();
-  }
-  fetch("/api/weapons").then((r) => r.json()).then(useCatalogue).catch(() => {});
-  const posOf = (id) => (latest ? latest.p.find((q) => q[0] === id) : null);
-
   // ------------------------------------------------------------ ui helpers
   function show(name) {
     for (const id of ["home", "lobby", "game"]) $(id).classList.toggle("active", id === name);
+    for (const id of ["roomSheet", "avSheet", "storeSheet", "setSheet", "lbSheet"]) $(id).hidden = true;   // menu sheets never follow you into a room
     if (name === "game") { resetPads(); startRender(); }
     else { cancelAnimationFrame(rafId); rafId = 0; }
     syncAmbient();
@@ -80,7 +68,17 @@ function start() {
     return d;
   }
   const inviteUrl = () => location.origin + "/r/" + code;
-  const colorOf = (id) => COLORS[id % COLORS.length];
+  // which character a player is wearing: the one they picked (the server makes it unique in the room)
+  const skinOf = (id) => {
+    const p = lobby && lobby.players.find((q) => q.id === id);
+    return p && Number.isInteger(p.skin) ? p.skin % 6 : id % 6;
+  };
+  const colorOf = (id) => COLORS[skinOf(id) % COLORS.length];
+  const AVATARS = window.AVATARS || [];
+  function mySkin() {            // saved choice from the Avatar screen; null lets the server give the first free one
+    try { const v = parseInt(localStorage.getItem("ls_skin"), 10); if (v >= 0 && v < 6) return v; } catch (e) {}
+    return null;
+  }
   const nameOf = (id) => {
     const p = lobby && lobby.players.find((q) => q.id === id);
     return p ? p.name : "Soldier";
@@ -108,14 +106,10 @@ function start() {
     if (rn.length < 3) return toast("Name your room: 3 to 12 letters or numbers.", true);
     try { localStorage.setItem("ls_room", rn); } catch (e) {}
     creating = true;
-    socket.emit("create_room", { name: myName(), device: deviceId(), room_name: rn, max_players: cap });
+    socket.emit("create_room", { name: myName(), device: deviceId(), skin: mySkin(), room_name: rn, max_players: cap });
   }
-  $("createBtn").onclick = () => {
-    if (!online()) return;
-    nameBox.hidden = false;
-    $("roomNameInput").focus();
-    nameBox.scrollIntoView({ block: "center", behavior: "smooth" });
-  };
+  $("createBtn").onclick = () => { if (online()) openRoomSheet("create"); };
+  $("joinOpenBtn").onclick = () => { if (online()) openRoomSheet("join"); };
   $("nameGoBtn").onclick = doCreate;
   $("roomNameInput").addEventListener("keydown", (e) => { if (e.key === "Enter") doCreate(); });
 
@@ -129,12 +123,12 @@ function start() {
       if (live) $("alcSub").textContent = d.players ? d.players + " inside \u00b7 tap to join" : "Tap to join \u00b7 first in picks the map";
     } catch (e) {}
   }
-  $("alcBtn").onclick = () => { if (online()) socket.emit("join", { code: "ALCATRAZ", name: myName(), device: deviceId() }); };
+  $("alcBtn").onclick = () => { if (online()) socket.emit("join", { code: "ALCATRAZ", name: myName(), device: deviceId(), skin: mySkin() }); };
   checkAlcatraz();
   setInterval(() => { if (!document.hidden) checkAlcatraz(); }, 15000);
   $("joinBtn").onclick = joinTyped;
   $("codeInput").addEventListener("keydown", (e) => { if (e.key === "Enter") joinTyped(); });
-  $("acceptBtn").onclick = () => { if (online()) socket.emit("join", { code: window.ROOM_CODE, name: myName(), device: deviceId() }); };
+  $("acceptBtn").onclick = () => { if (online()) socket.emit("join", { code: window.ROOM_CODE, name: myName(), device: deviceId(), skin: mySkin() }); };
   $("ownRoomBtn").onclick = () => {
     history.replaceState(null, "", "/");
     window.ROOM_CODE = "";
@@ -144,7 +138,7 @@ function start() {
   function joinTyped() {
     const c = $("codeInput").value.trim().toUpperCase();
     if (c.length < 3) return toast("Enter the room code or name.", true);
-    if (online()) socket.emit("join", { code: c, name: myName(), device: deviceId() });
+    if (online()) socket.emit("join", { code: c, name: myName(), device: deviceId(), skin: mySkin() });
   }
 
 
@@ -228,6 +222,62 @@ function start() {
   const closeSettings = () => { $("setSheet").hidden = true; };
   $("setClose").onclick = closeSettings;
   $("setSheet").addEventListener("click", (e) => { if (e.target === $("setSheet")) closeSettings(); });
+
+  // ------------------------------------------------------------ menu sheets: room name, avatar, store
+  const sheetIds = ["roomSheet", "avSheet", "storeSheet", "setSheet", "lbSheet"];
+  function bindSheet(id, closeId) {
+    const el = $(id), close = () => { el.hidden = true; };
+    if (closeId) $(closeId).onclick = close;
+    el.addEventListener("click", (e) => { if (e.target === el) close(); });
+  }
+  bindSheet("roomSheet", "roomClose");
+  bindSheet("avSheet", "avClose");
+  bindSheet("storeSheet", "storeClose");
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") for (const id of sheetIds) $(id).hidden = true;
+  });
+  function openRoomSheet(kind) {                // one small sheet for both: type the room name, then go
+    $("nameBox").hidden = kind !== "create";
+    $("joinBox").hidden = kind !== "join";
+    $("roomSheet").hidden = false;
+    setTimeout(() => $(kind === "create" ? "roomNameInput" : "codeInput").focus(), 50);
+  }
+
+  function syncMenuFace() {                     // profile chip shows the character you picked
+    const v = mySkin(), img = $("chipFace");
+    img.toggleAttribute("hidden", v === null);                 // (SVG elements have no .hidden property)
+    $("chipIcon").toggleAttribute("hidden", v !== null);
+    if (v !== null) img.src = "/static/img/avatars/a" + v + ".jpg?v=1";
+    const a = AVATARS.find((q) => q.skin === v);
+    $("avNow").textContent = a ? "Playing as " + a.name : "Pick your character";
+  }
+  function renderAvatars() {
+    const grid = $("avGrid"), cur = mySkin();
+    grid.textContent = "";
+    for (const a of AVATARS) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "av-card" + (cur === a.skin ? " on" : "");
+      b.setAttribute("aria-pressed", String(cur === a.skin));
+      b.style.setProperty("--ac", COLORS[a.skin % COLORS.length]);
+      const img = document.createElement("img");
+      img.src = "/static/img/avatars/a" + a.skin + ".png?v=1";
+      img.alt = "";
+      img.draggable = false;
+      const nm = document.createElement("span");
+      nm.textContent = a.name;
+      b.append(img, nm);
+      b.onclick = () => {
+        try { localStorage.setItem("ls_skin", String(a.skin)); } catch (e) {}
+        renderAvatars();
+        syncMenuFace();
+      };
+      grid.append(b);
+    }
+  }
+  $("avBtn").onclick = () => { renderAvatars(); syncMenuFace(); $("avSheet").hidden = false; };
+  $("storeBtn").onclick = () => { $("storeSheet").hidden = false; };
+  syncMenuFace();
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSettings(); });
   $("setSound").onclick = toggleMute;
   $("setVol").oninput = (e) => {
@@ -274,6 +324,16 @@ function start() {
       navigator.clipboard.writeText(text).then(() => toast(okMsg), () => toast(text));
     } else toast(text);
   }
+
+  // phones held upright get a rotate prompt; the tap that dismisses it goes fullscreen and locks landscape (Android Chrome).
+  // Where the browser can't lock (iPhone), the prompt just asks them to turn the phone and goes away on its own.
+  const gate = $("rotateGate"), upright = matchMedia("(orientation: portrait)"), touchy = matchMedia("(pointer: coarse)");
+  const canLock = !!(screen.orientation && screen.orientation.lock);
+  const syncGate = () => { gate.hidden = !(touchy.matches && upright.matches); };
+  $("rgBtn").hidden = !canLock;
+  upright.addEventListener("change", syncGate);
+  gate.addEventListener("click", () => { enterFullscreen(); });
+  syncGate();
 
   function enterFullscreen() {
     const el = document.documentElement;
@@ -390,7 +450,7 @@ function start() {
     const mine = document.createElement("li");
     const myDot = document.createElement("span");
     myDot.className = "dot";
-    myDot.style.background = COLORS[me % COLORS.length];
+    myDot.style.background = colorOf(me);
     const myName = document.createElement("span");
     myName.className = "vname";
     myName.textContent = "You";
@@ -409,7 +469,7 @@ function start() {
       const li = document.createElement("li");
       const dot = document.createElement("span");
       dot.className = "dot";
-      dot.style.background = COLORS[p.id % COLORS.length];
+      dot.style.background = colorOf(p.id);
       const name = document.createElement("span");
       name.className = "vname";
       name.textContent = p.name;
@@ -439,7 +499,6 @@ function start() {
     code = null; world = null; lobby = null; snaps = []; evq = []; latest = null; me = null;
     pst.clear(); parts.length = 0; expls.length = 0; flashes.length = 0;
     $("over").hidden = true; $("feed").textContent = "";
-    if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {});
     history.replaceState(null, "", "/");
     window.ROOM_CODE = "";
     $("inviteBlock").hidden = true;
@@ -461,17 +520,11 @@ function start() {
       const dot = document.createElement("img");
       dot.className = "avatar";
       dot.alt = "";
-      dot.src = "/static/img/avatars/a" + (p.id % 6) + ".jpg?v=1";
-      dot.style.borderColor = COLORS[p.id % COLORS.length];
+      dot.src = "/static/img/avatars/a" + skinOf(p.id) + ".jpg?v=1";
+      dot.style.borderColor = colorOf(p.id);
       const name = document.createElement("span");
       name.textContent = p.name;
       li.append(dot, name);
-      const pw = WC && WC.weapons[p.wpn];
-      if (pw) {
-        const gun = document.createElement("img");
-        gun.className = "gun"; gun.alt = pw.name; gun.title = pw.name; gun.src = wImg(pw.icon);
-        li.append(gun);
-      }
       const tags = [];
       if (p.id === lobby.host) tags.push("host");
       if (p.id === me) tags.push("you");
@@ -492,92 +545,9 @@ function start() {
     $("startBtn").textContent = canStart ? "Start match" : "Need " + lobby.min + " players to start";
     $("waitMsg").hidden = isHost;
     boardKey = "";
-    updateWpnRows();
     if (latest) updateHud();
     renderVoicePanel();
   }
-
-  // ------------------------------------------------------------ weapon choice (lobby + between matches)
-  const wpnOpen = () => !$("game").classList.contains("active") || phase === "over";   // never while a match is running
-  const myPrimary = () => { const q = lobby && lobby.players.find((x) => x.id === me); return q ? q.wpn : (WC ? WC.default : 3); };
-  function updateWpnRows() {
-    const w = WC && WC.weapons[myPrimary()];
-    for (const row of document.querySelectorAll(".wpn-row")) {
-      row.hidden = !w || !WC.primaries.length;
-      if (row.hidden) continue;
-      row.querySelector("img").src = wImg(w.icon);
-      row.querySelector("b").textContent = w.name;
-    }
-  }
-  function openWeapons() {
-    if (!WC || !WC.primaries.length) return;
-    if (!wpnOpen()) { toast("Weapons are locked while a match is running."); return; }
-    selWpn = myPrimary();
-    selCat = WC.weapons[selWpn].cat;
-    $("wpnSheet").hidden = false;
-    renderSheet();
-  }
-  function closeWeapons() { $("wpnSheet").hidden = true; }
-  function renderSheet() {
-    if (!WC || $("wpnSheet").hidden || selWpn == null) return;
-    const W = WC.weapons, mine = myPrimary();
-    const tabs = $("wsCats");
-    tabs.textContent = "";
-    for (const [k, label] of WC.cats.filter(([k]) => WC.primaries.some((id) => W[id].cat === k))) {
-      const b = document.createElement("button");
-      b.type = "button"; b.textContent = label; b.className = k === selCat ? "on" : "";
-      b.setAttribute("role", "tab"); b.setAttribute("aria-selected", String(k === selCat));
-      b.onclick = () => {
-        selCat = k;
-        if (W[selWpn].cat !== k) selWpn = WC.primaries.find((id) => W[id].cat === k);
-        renderSheet();
-      };
-      tabs.append(b);
-    }
-    const strip = $("wsStrip");
-    strip.textContent = "";
-    for (const id of WC.primaries.filter((i) => W[i].cat === selCat)) {
-      const b = document.createElement("button");
-      b.type = "button"; b.className = (id === selWpn ? "on " : "") + (id === mine ? "equipped" : "");
-      const im = document.createElement("img"); im.src = wImg(W[id].icon); im.alt = "";
-      const nm = document.createElement("span"); nm.textContent = W[id].name;
-      b.append(im, nm);
-      b.onclick = () => { selWpn = id; renderSheet(); };
-      strip.append(b);
-    }
-    const w = W[selWpn];
-    $("wsName").textContent = w.name;
-    $("wsCat").textContent = (WC.cats.find(([k]) => k === w.cat) || ["", ""])[1];
-    $("wsImg").src = wImg(w.icon); $("wsImg").alt = w.name;
-    $("wsDesc").textContent = w.desc;
-    const rows = [["Damage", w.dmg, w.dmg / 100], ["Fire rate", w.rpm, w.rpm / 1000], ["Magazine", w.mag, Math.log10(w.mag + 1) / 2],
-      ["Reload time", w.reload.toFixed(1) + "s", w.reload / 5], ["Accuracy", w.acc, w.acc / 100]];
-    const box = $("wsStats");
-    box.textContent = "";
-    for (const [label, val, frac] of rows) {
-      const r = document.createElement("div"); r.className = "ws-stat";
-      const l = document.createElement("span"); l.textContent = label;
-      const v = document.createElement("b"); v.textContent = val;
-      const bar = document.createElement("div"), fill = document.createElement("i");
-      fill.style.width = Math.round(clamp(frac, 0.04, 1) * 100) + "%";
-      bar.append(fill); r.append(l, v, bar); box.append(r);
-    }
-    const eq = $("wsEquip");
-    eq.disabled = selWpn === mine;
-    eq.textContent = selWpn === mine ? "Equipped" : "Equip";
-  }
-  for (const r of document.querySelectorAll("[data-open-weapons]")) r.addEventListener("click", openWeapons);
-  $("wsClose").addEventListener("click", closeWeapons);
-  $("wpnSheet").addEventListener("pointerdown", (e) => { if (e.target === $("wpnSheet")) closeWeapons(); });
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeWeapons(); });
-  $("wsEquip").addEventListener("click", () => {
-    if (!WC || selWpn == null || !wpnOpen()) return;
-    socket.emit("choose_weapon", { wpn: selWpn });
-    const q = lobby && lobby.players.find((x) => x.id === me);
-    if (q) q.wpn = selWpn;                    // show it at once; the server confirms with the next lobby update
-    updateWpnRows(); closeWeapons();
-    toast(WC.weapons[selWpn].name + " equipped");
-  });
 
   // ------------------------------------------------------------ socket events
   const connEl = $("conn");
@@ -586,7 +556,7 @@ function start() {
   socket.on("connect", () => {
     status("Connected", "ok");
     setTimeout(() => { if (socket.connected) connEl.className = "conn hide"; }, 1500);
-    if (connectedOnce && code) socket.emit("join", { code, name: myName(), device: deviceId() });
+    if (connectedOnce && code) socket.emit("join", { code, name: myName(), device: deviceId(), skin: mySkin() });
     connectedOnce = true;
   });
   socket.on("disconnect", () => { status("Connection lost. Reconnecting...", "bad"); });
@@ -609,8 +579,6 @@ function start() {
 
   socket.on("start", (d) => {
     world = d.world;
-    if (!WC && world.weapons) useCatalogue({ weapons: world.weapons, primaries: [], cats: [], default: 3, secondary: 0 });
-    closeWeapons();
     loadArt(world);
     snaps = []; evq = []; latest = null;
     pst.clear(); parts.length = 0; expls.length = 0; flashes.length = 0;
@@ -685,18 +653,13 @@ function start() {
       $("hpFill").style.width = hp + "%";
       $("hpFill").style.background = hp > 55 ? "#5fc24a" : hp > 25 ? "#e8b02e" : "#d24a43";
       $("hpText").textContent = hp;
-      const w = WC && WC.weapons[mine[7]];
-      $("wpnText").textContent = w ? w.name : "";
-      const mg = $("magText"), rem = mine[13] || 0;
-      mg.textContent = w ? mine[10] + "/" + w.mag : "";
-      mg.classList.toggle("low", !!w && mine[10] <= Math.max(1, w.mag * 0.25));
-      const rb = $("rlBar");
-      rb.hidden = !(w && rem > 0);
-      if (!rb.hidden) $("rlFill").style.width = Math.round(clamp(1 - rem / w.reload, 0, 1) * 100) + "%";
-      const wi = $("wpnIcon"), wsrc = w ? wImg(w.icon) : "";
-      if (wi && wsrc && wi.dataset.s !== wsrc) { wi.dataset.s = wsrc; wi.src = wsrc; }
+      const w = world && world.weapons[String(mine[7])];
+      $("wpnText").textContent = (w ? w.name : "") + "  " + (mine[10] < 0 ? "\u221E" : mine[10]);
+      const wi = $("wpnIcon"), wsrc = "/static/img/wpn/" + (mine[7] === 1 ? "shotgun" : mine[7] === 2 ? "rocket" : "glock") + ".png?v=1";
+      if (wi && wi.dataset.s !== wsrc) { wi.dataset.s = wsrc; wi.src = wsrc; }
       const pt = $("hudFace");
-      if (pt && !pt.dataset.s) { pt.dataset.s = "1"; pt.src = "/static/img/avatars/a" + (me % 6) + ".jpg?v=1"; }
+      const fsrc = "/static/img/avatars/a" + skinOf(me) + ".jpg?v=1";
+      if (pt && pt.dataset.s !== fsrc) { pt.dataset.s = fsrc; pt.src = fsrc; }
       const b = $("banner");
       if ((mine[8] & 4) && phase === "play") {
         b.hidden = false;
@@ -712,7 +675,6 @@ function start() {
     }
     if (phase === "over" && !overShown) {
       overShown = true;
-      updateWpnRows();
       fillBoard($("overBoard"), rows, true);
       const sub = $("overSub");
       sub.hidden = true;
@@ -742,8 +704,8 @@ function start() {
       const dot = document.createElement("img");
       dot.className = "avatar";
       dot.alt = "";
-      dot.src = "/static/img/avatars/a" + (p[0] % 6) + ".jpg?v=1";
-      dot.style.borderColor = COLORS[p[0] % COLORS.length];
+      dot.src = "/static/img/avatars/a" + skinOf(p[0]) + ".jpg?v=1";
+      dot.style.borderColor = colorOf(p[0]);
       dot.style.width = dot.style.height = big ? "30px" : "18px";
       const nm = document.createElement("span");
       nm.className = "nm";
@@ -768,8 +730,7 @@ function start() {
       const b = document.createElement("span");
       b.style.color = colorOf(victim);
       b.textContent = nameOf(victim);
-      const kd = WC && WC.weapons[wpn];
-      mid.textContent = wpn === 2 ? " rocketed " : kd && kd.cat === "shotgun" ? " shredded " : kd && kd.cat === "sniper" ? " sniped " : " shot ";
+      mid.textContent = [" shot ", " shredded ", " rocketed "][wpn] || " got ";
       row.append(a, mid, b);
     }
     const feed = $("feed");
@@ -807,16 +768,14 @@ function start() {
   const SND = {};
   const SND_FILES = ["pistol_fire", "shotgun_fire", "rocket_launch", "rocket_explosion", "hit_marker", "player_hit",
     "player_death", "respawn", "kill_confirm", "weapon_pickup", "footstep_metal", "land", "button_click", "button_error",
-    "room_created", "player_joined", "player_left", "match_start", "victory", "defeat", "menu_ambient",
-    "rifle_fire", "rifle_heavy_fire", "smg_fire", "sniper_fire", "reload_pistol", "reload_rifle", "reload_smg", "reload_lmg",
-    "reload_shotgun", "reload_rocket", "reload_sniper", "weapon_switch", "dry_click"];
+    "room_created", "player_joined", "player_left", "match_start", "victory", "defeat", "menu_ambient"];
   let sndLoading = false, ambient = null;
   function loadSounds() {
     const a = ac();
     if (!a || sndLoading) return;
     sndLoading = true;
     for (const n of SND_FILES) {
-      fetch("/static/audio/" + n + ".wav?v=7")
+      fetch("/static/audio/" + n + ".wav?v=6")
         .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject()))
         .then((buf) => new Promise((res, rej) => a.decodeAudioData(buf, res, rej)))
         .then((b) => { SND[n] = b; if (n === "menu_ambient") syncAmbient(); })
@@ -882,24 +841,13 @@ function start() {
   const near = (x, y) => (x == null ? 1 : Math.max(0.1, 1 - Math.hypot(x - cam.x, y - cam.y) / 1400));
   const SFX = {
     shot: (w, x, y) => {
-      const v = near(x, y), d = WC && WC.weapons[w];
-      const n = d ? d.snd : ["pistol_fire", "shotgun_fire", "rocket_launch"][w];
-      const quick = d && d.rpm > 400;          // rapid-fire guns play a little quieter so a long burst does not clip
-      if (n && play(n, (quick ? 0.42 : 0.55) * v, 0.96 + Math.random() * 0.08)) return;
+      const v = near(x, y);
+      const n = ["pistol_fire", "shotgun_fire", "rocket_launch"][w];
+      if (n && play(n, 0.55 * v, 0.96 + Math.random() * 0.08)) return;
       if (w === 0) { noise(0.09, 4500, 800, 0.35 * v, "highpass"); tone(380, 90, 0.08, 0.12 * v, "square"); }
       else if (w === 1) { noise(0.2, 3000, 300, 0.6 * v); tone(140, 45, 0.16, 0.25 * v, "sawtooth"); }
-      else if (w === 2) { noise(0.35, 1200, 200, 0.5 * v); tone(200, 60, 0.3, 0.2 * v, "sawtooth"); }
-      else { noise(0.12, 3800, 500, 0.4 * v); tone(220, 70, 0.1, 0.15 * v, "square"); }
+      else { noise(0.35, 1200, 200, 0.5 * v); tone(200, 60, 0.3, 0.2 * v, "sawtooth"); }
     },
-    reload: (wid, secs, mine, x, y) => {
-      const d = WC && WC.weapons[wid];
-      if (!d) return;
-      const v = mine ? 0.8 : 0.5 * near(x, y), b = SND[d.rsnd];
-      if (b && play(d.rsnd, v, clamp(b.duration / Math.max(0.5, secs), 0.8, 1.35))) return;   // sound ends as the reload does
-      tone(300, 200, 0.05, 0.12 * v, "square"); tone(520, 420, 0.06, 0.12 * v, "square", Math.max(0.1, secs - 0.12));
-    },
-    swap: (mine, x, y) => { const v = mine ? 0.7 : 0.4 * near(x, y); if (!play("weapon_switch", v)) tone(420, 300, 0.05, 0.1 * v, "square"); },
-    dry: () => { if (!play("dry_click", 0.7)) tone(900, 600, 0.02, 0.1, "square"); },
     boom: (x, y) => {
       const v = near(x, y);
       if (play("rocket_explosion", 0.75 * v)) return;
@@ -930,11 +878,8 @@ function start() {
     ArrowLeft: "l", KeyA: "l", ArrowRight: "r", KeyD: "r",
     ArrowUp: "u", KeyW: "u", Space: "u", ArrowDown: "d", KeyS: "d",
   };
-  const act = (a) => { if (socket.connected && $("game").classList.contains("active") && phase === "play") socket.emit("act", { a }); };
-  const ACTKEYS = { KeyR: "reload", KeyQ: "switch", Digit1: "slot0", Digit2: "slot1" };
   function onKey(e, down) {
     if (!$("game").classList.contains("active")) return;
-    if (ACTKEYS[e.code]) { e.preventDefault(); if (down && !e.repeat) act(ACTKEYS[e.code]); return; }
     const k = KEYMAP[e.code];
     if (!k) return;
     e.preventDefault();
@@ -955,12 +900,6 @@ function start() {
   });
   window.addEventListener("pointerup", (e) => { if (e.pointerType === "mouse") mouse.down = false; });
   document.addEventListener("contextmenu", (e) => e.preventDefault());
-  canvas.addEventListener("wheel", (e) => { e.preventDefault(); act("switch"); }, { passive: false });
-  for (const [id, a] of [["btnReload", "reload"], ["btnSwap", "switch"]]) {      // touch buttons
-    const b = $(id);
-    b.addEventListener("pointerdown", (e) => { e.preventDefault(); e.stopPropagation(); b.classList.add("on"); act(a); });
-    for (const ev of ["pointerup", "pointercancel", "pointerleave"]) b.addEventListener(ev, () => b.classList.remove("on"));
-  }
 
   // floating thumbsticks (left = fly, right = aim + auto-fire)
   function makePad(zoneId, baseId, knobId, R, home, onMove, onEnd) {
@@ -1034,8 +973,11 @@ function start() {
   }
   const skinImgs = [];
   let explImg = null;
-  const flashImgs = [];
-  for (let i = 0; i < 3; i++) loadImg("/static/img/wpn/flash_" + i + ".png?v=1").then((im) => { flashImgs[i] = im; });
+  const handImgs = [], flashImgs = [];
+  for (let i = 0; i < 3; i++) {
+    loadImg("/static/img/wpn/hand_" + i + ".png?v=1").then((im) => { handImgs[i] = im; });
+    loadImg("/static/img/wpn/flash_" + i + ".png?v=1").then((im) => { flashImgs[i] = im; });
+  }
   for (let i = 0; i < 6; i++) loadImg("/static/img/skin" + i + ".png?v=4").then((im) => { skinImgs[i] = im; });
   loadImg("/static/img/explosion.png?v=3").then((im) => { explImg = im; });
   const SK = (window.SKINS && window.SKINS.counts) || {};
@@ -1056,7 +998,7 @@ function start() {
       const n = pr[0];
       if (artAsked.has(n)) continue;
       artAsked.add(n);
-      loadImg("/static/img/street/" + n + ".png?v=2").then((im) => { if (im) ART[n] = im; });
+      loadImg("/static/img/street/" + n + ".png?v=3").then((im) => { if (im) ART[n] = im; });
     }
   }
 
@@ -1374,7 +1316,7 @@ function start() {
     if (dead && now - st.deadAt > 1900) return;
     const aim = id === me && !dead ? localAim : p[5];
     const facing = Math.cos(aim) >= 0 ? 1 : -1;
-    const sid = id % 6;
+    const sid = skinOf(id);
     const cnt = SK[sid] || [1, 2, 2, 1, 4, 1];
     const img = skinImgs[sid];
     const ground = !!(flags & 1), thrust = !!(flags & 2), firing = !!(flags & 8);
@@ -1392,7 +1334,7 @@ function start() {
     ctx.scale(facing * SPR, SPR);
     if (!dead) drawJetpack(thrust);
     if (!img) {
-      ctx.fillStyle = COLORS[id % 6]; ctx.fillRect(-16, -64, 32, 64);
+      ctx.fillStyle = colorOf(id); ctx.fillRect(-16, -64, 32, 64);
     } else if (whole) {
       ctx.drawImage(img, idx * 128, row * 128, 128, 128, -64, -127, 128, 128);
     } else {
@@ -1403,14 +1345,8 @@ function start() {
       ctx.translate(0, PIV - 127);
       ctx.rotate(am + TIP);
       ctx.drawImage(img, idx * 128, row * 128, 128, SPLIT, -64, -PIV, 128, SPLIT);
-      const wd = WC && WC.weapons[p[7]], hw = wd && handImgs[p[7]];
-      if (hw) {
-        const gh = hw.height * wd.len / hw.width;
-        if (p[13] > 0) {                       // reloading: the gun dips and wobbles in the hands
-          ctx.translate(16, 4); ctx.rotate(0.5 + 0.07 * Math.sin(now / 80)); ctx.translate(-16, -4);
-        }
-        ctx.drawImage(hw, wd.hx, 4 - gh * wd.bore, wd.len, gh);
-      }
+      const hw = handImgs[p[7]], hd = HAND[p[7]];
+      if (hw && hd) { const gh = hw.height * hd.len / hw.width; ctx.drawImage(hw, hd.x, hd.y - gh * 0.4, hd.len, gh); }
       ctx.restore();
     }
     ctx.restore();
@@ -1423,18 +1359,13 @@ function start() {
     ctx.textAlign = "center";
     ctx.font = "700 14px 'Barlow Semi Condensed', sans-serif";
     ctx.lineWidth = 4; ctx.strokeStyle = "rgba(10,18,32,.85)";
-    ctx.fillStyle = COLORS[id % 6];
+    ctx.fillStyle = colorOf(id);
     const nm = nameOf(id);
     ctx.strokeText(nm, cx, y - 14); ctx.fillText(nm, cx, y - 14);
     ctx.fillStyle = "rgba(10,18,32,.8)"; ctx.fillRect(cx - 19, y - 10, 38, 5);
     const hp = p[6];
     ctx.fillStyle = hp > 55 ? "#5fc24a" : hp > 25 ? "#e8b02e" : "#d24a43";
     ctx.fillRect(cx - 18, y - 9, 36 * hp / 100, 3);
-    const rd = WC && WC.weapons[p[7]];
-    if (p[13] > 0 && rd) {                     // reload progress above the head
-      ctx.fillStyle = "rgba(10,18,32,.8)"; ctx.fillRect(cx - 19, y - 4, 38, 4);
-      ctx.fillStyle = "#ffb23a"; ctx.fillRect(cx - 18, y - 3, 36 * clamp(1 - p[13] / rd.reload, 0, 1), 2);
-    }
     if (id === me) {
       ctx.fillStyle = "#ff7a1a";
       ctx.beginPath(); ctx.moveTo(cx - 6, y - 36); ctx.lineTo(cx + 6, y - 36); ctx.lineTo(cx, y - 28); ctx.fill();
@@ -1475,14 +1406,6 @@ function start() {
       if (e[1] === me && e[2] !== me) SFX.kill();
     } else if (k === "pu") {
       if (e[2] === me) SFX.pickup();
-    } else if (k === "rl") {
-      const q = posOf(e[1]);
-      SFX.reload(e[2], e[3], e[1] === me, q && q[1], q && q[2]);
-    } else if (k === "sw") {
-      const q = posOf(e[1]);
-      SFX.swap(e[1] === me, q && q[1], q && q[2]);
-    } else if (k === "dry") {
-      if (e[1] === me) SFX.dry();
     }
   }
 
@@ -1505,11 +1428,10 @@ function start() {
     for (let i = flashes.length - 1; i >= 0; i--) {
       const f = flashes[i];
       if (now - f.t0 > 70) { flashes.splice(i, 1); continue; }
-      const fd = WC && WC.weapons[f.w], fx = fd ? fd.fl : Math.min(2, f.w);
-      const s = fx === 0 ? 1 : fx === 1 ? 1.5 : 1.9;
+      const s = f.w === 0 ? 1 : f.w === 1 ? 1.5 : 1.9;
       ctx.save(); ctx.translate(f.x, f.y); ctx.rotate(f.a);
-      const fi = flashImgs[fx];
-      if (fi) { const fw = fd ? fd.flw : [26, 46, 58][fx], fh = fi.height * fw / fi.width; ctx.drawImage(fi, -fw * 0.15, -fh / 2, fw, fh); ctx.restore(); continue; }
+      const fi = flashImgs[f.w];
+      if (fi) { const fw = FLASH_W[f.w], fh = fi.height * fw / fi.width; ctx.drawImage(fi, -fw * 0.15, -fh / 2, fw, fh); ctx.restore(); continue; }
       ctx.fillStyle = "#ffb12b";
       ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(12 * s, -7 * s); ctx.lineTo(30 * s, 0); ctx.lineTo(12 * s, 7 * s); ctx.fill();
       ctx.fillStyle = "#fff4c2";
@@ -1572,11 +1494,6 @@ function start() {
         ctx.beginPath(); ctx.moveTo(-14, -3); ctx.lineTo(-26 - Math.random() * 8, 0); ctx.lineTo(-14, 3); ctx.fill();
         ctx.restore();
         if (Math.random() < 0.7) addPart(x - Math.cos(ang) * 16, y - Math.sin(ang) * 16, 0, 0, 0.5, 6, "#aeb6c4", -10, true);
-      } else if (type === 3) {
-        ctx.strokeStyle = "rgba(255,226,150,.5)"; ctx.lineWidth = 6; ctx.lineCap = "round";
-        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - Math.cos(ang) * 60, y - Math.sin(ang) * 60); ctx.stroke();
-        ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - Math.cos(ang) * 38, y - Math.sin(ang) * 38); ctx.stroke();
       } else if (type === 1) {
         ctx.fillStyle = "#ffe08a"; ctx.fillRect(x - 1.5, y - 1.5, 3, 3);
       } else {
