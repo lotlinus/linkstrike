@@ -1,29 +1,11 @@
-# Link Strike v1.1 (weapons update: magazines, reload, weapon choice)
+# Link Strike v1.0 (art + UI update on the v0.9.1 jetpack game)
 
 Jetpack shooter in the browser. Make a room, send the link, fight (2-6 players, first to 10 kills). A public ALCATRAZ room opens every night at 8pm (Nigeria time).
 
 ## Controls
-Phone (landscape): left thumb flies (push up = jetpack), right thumb aims and auto-fires. Two round buttons on the right swap weapon and reload.
+Phone (landscape): left thumb flies (push up = jetpack), right thumb aims and auto-fires.
 Laptop: WASD / arrows to fly (W, Up or Space = jetpack), mouse to aim, hold click to shoot.
-Laptop weapon keys: **R** reload, **Q** (or the mouse wheel) swap between primary and Glock, **1** primary, **2** Glock.
-Only health packs lie around the maps now. Weapons are chosen before the match.
-
-## Weapons (v1.1)
-Pick a primary in the lobby (slim "Your weapon" row > weapon selection sheet), or between matches on the game-over card. It locks while a match
-runs, and you respawn with it. Everybody also carries a Glock 17. Every weapon has a magazine and a reload time (unlimited reserve ammo);
-an empty magazine reloads on its own, **R** reloads early, swapping cancels a reload.
-| Weapon | Type | Dmg | Mag | Reload |
-|---|---|---|---|---|
-| AK-47 / M4A1 / SCAR-L | assault | 15 / 11 / 20 | 30 / 30 / 25 | 2.4 / 2.0 / 2.2s |
-| MP5 / UMP45 / P90 / MAC-10 | SMG | 9 / 12 / 7 / 6.5 | 30 / 25 / 50 / 32 | 1.9 / 2.1 / 2.6 / 1.7s |
-| AWM | sniper | 70 | 5 | 3.2s |
-| Shotgun | shotgun | 7 x 11 | 6 | 2.4s |
-| M249 SAW / Rocket Launcher | heavy | 11 / 85 blast | 100 / 1 | 4.5 / 2.8s |
-| Glock 17 (secondary) | pistol | 18 | 15 | 1.2s |
-All numbers live in the `WEAPONS` table at the top of `game.py` (balance there). The menu, hand sprites and sounds read the same table through
-`/api/weapons`. To add a weapon: add a row (copy one), drop `<icon>.png` and `hand_<icon>.png` in `static/img/wpn/`, and add its sounds in `static/audio/`.
-Sounds: the fire and reload sounds for the new weapons are synthesized on top of the existing pistol and shotgun recordings; replace any
-`static/audio/*.wav` with a real recording of the same name any time.
+Pick up weapons and health around the base: shotgun, rocket launcher, health packs.
 
 ## Run locally
     python -m venv .venv && source .venv/bin/activate      (Windows: .venv\Scripts\activate)
@@ -47,7 +29,6 @@ The `players` table is created automatically. No DATABASE_URL (or Neon unreachab
 ## Tests (game rules, no extra packages)
     python tests/test_game.py
     python tests/test_street.py
-    python tests/test_stairs.py
 
 ## Deploy on Render
 1. Push this folder to GitHub.
@@ -57,7 +38,7 @@ Free plan sleeps after ~15 min idle (first load ~30s). Keep ONE worker: rooms li
 Set MIN_TO_START=2 in Render env vars once you're done solo testing.
 
 ## Files
-- game.py      maps list, jetpack physics, weapons table (magazines, reload), health pickups, scoring (server-side, tested)
+- game.py      maps list, jetpack physics, weapons, pickups, scoring (server-side, tested)
 - street_map.py  the Street map (see Maps above)
 - app.py       Flask-SocketIO rooms, lobby, game loop, /api/leaderboard
 - rankings.py  leaderboard rules + Neon (Postgres) access with offline fallback

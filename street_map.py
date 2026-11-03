@@ -15,22 +15,23 @@ SEWER_TOP, SEWER_FLOOR = 33, 42
 
 # natural size (px) of the sprites used below: name -> (w, h)
 SZ = {
-    "ac_unit": (44, 43), "atm": (37, 89), "barrel_blue": (42, 63), "bin": (53, 57), "bld1": (163, 331),
-    "bld2": (152, 312), "bld3": (170, 279), "bld4": (144, 297), "bld5": (181, 237), "block_stack": (73, 66),
-    "bus_stop_sign": (41, 136), "cone": (24, 32), "crate_wood": (57, 55), "grate": (97, 57), "keke": (65, 54),
-    "kiosk_green": (104, 96), "kiosk_yellow": (78, 83), "lamps_a": (15, 123), "lamps_c": (18, 129), "moto": (87, 48),
-    "pipe_big": (115, 64), "pipe_end": (62, 68), "planter": (94, 51), "pos_booth": (62, 90), "sewer_drop": (66, 122),
-    "sewer_outlet": (121, 84), "sign_lagos": (66, 43), "sign_oneway": (79, 44), "slab_a": (166, 38),
-    "steel_bench": (104, 27), "suv": (144, 76), "tires": (46, 51), "van": (140, 68), "wall_right": (267, 87),
+    "ac_unit": (53, 78), "atm": (134, 113), "barrel_blue": (53, 78), "bin": (81, 87), "bld1": (242, 300),
+    "bld2": (249, 301), "bld3": (242, 290), "bld4": (183, 289), "bld5": (180, 194), "block_stack": (113, 104),
+    "bus_stop_sign": (53, 160), "cone": (32, 79), "crate_wood": (99, 88), "grate": (103, 59), "keke": (145, 101),
+    "kiosk_green": (172, 135), "kiosk_yellow": (133, 126), "lamps_a": (84, 140), "lamps_c": (70, 165),
+    "moto": (122, 71), "pipe_big": (182, 173), "pipe_end": (75, 95), "planter": (161, 155), "pos_booth": (93, 122),
+    "sewer_drop": (83, 107), "sewer_outlet": (245, 105), "sign_lagos": (183, 137), "sign_oneway": (143, 73),
+    "slab_a": (132, 32), "steel_bench": (92, 34), "suv": (241, 117), "tires": (52, 80), "van": (261, 113),
+    "wall_right": (144, 98),
 }
 
 # building: (sprite, left col, rows of body above the street, roof row inside the sprite, body x range inside the sprite)
 BUILDINGS = [
-    ("bld1", 1, 10, 57, 7, 157),
-    ("bld3", 15, 9, 29, 13, 155),
-    ("bld5", 36, 6, 75, 5, 153),
-    ("bld4", 59, 10, 37, 9, 129),
-    ("bld2", 72, 11, 35, 8, 146),
+    ("bld1", 1, 8, 42, 6, 236),
+    ("bld3", 14, 8, 12, 20, 225),
+    ("bld5", 36, 6, 34, 12, 168),
+    ("bld4", 59, 8, 35, 13, 170),
+    ("bld2", 71, 7, 60, 10, 230),
 ]
 
 
@@ -75,19 +76,19 @@ def build():
     fill(36, 35, 43, 35, "=")
     both(37, 40, 38, 41, "S")                          # cover blocks under the centre ledge
     floor = SEWER_FLOOR * T
-    put("sewer_outlet", 5 * T, 1590, 90)
-    put("sewer_outlet", 74 * T, 1590, 90)
+    put("sewer_outlet", 5 * T, 1590, 62)
+    put("sewer_outlet", 74 * T, 1590, 62)
     put("sewer_drop", 11 * T, 1440, 110)
     put("sewer_drop", 68 * T, 1440, 110)
-    put("pipe_big", 24 * T, floor, 50)
-    put("pipe_big", 55 * T, floor, 50)
+    put("pipe_big", 24 * T, floor, 70)
+    put("pipe_big", 55 * T, floor, 70)
     put("grate", 40 * T, 1560, 60)
     put("barrel_blue", 20 * T, floor, 56)
     put("crate_wood", 60 * T, floor, 50)
-    put("block_stack", 32 * T, floor, 60)
-    put("block_stack", 47 * T, floor, 60)
-    put("pipe_end", 13.5 * T, floor, 56)
-    put("pipe_end", 65.5 * T, floor, 56)
+    put("block_stack", 32 * T, floor, 72)
+    put("block_stack", 47 * T, floor, 72)
+    put("pipe_end", 13.5 * T, floor, 84)
+    put("pipe_end", 65.5 * T, floor, 84)
 
     # ---- buildings: solid body + sprite on top
     for name, left, n, roof, bx0, bx1 in BUILDINGS:
@@ -112,19 +113,20 @@ def build():
     put("pos_booth", 29.3 * T, ground, 100)
     put("atm", 51.0 * T, ground, 80)
     put("bin", 14.3 * T, ground, 44)
-    put("tires", 50.4 * T, ground, 44)
-    put("cone", 6.9 * T, ground, 28)
-    put("cone", 71.9 * T, ground, 28)
+    put("tires", 50.4 * T, ground, 50)
+    put("cone", 6.9 * T, ground, 40)
+    put("cone", 71.9 * T, ground, 40)
     fill(30, GT - 2, 35, GT - 1, "B")                  # cover walls with barbed-wire fence on top
     fill(44, GT - 2, 49, GT - 1, "B")
-    put("wall_right", 33 * T, ground, 80)
-    put("wall_right", 47 * T, ground, 80)
-    put("sign_lagos", 33 * T, ground - 14, 40)
-    put("sign_oneway", 47 * T, ground - 14, 38)
+    for cx in (33, 47):                                # two fence panels side by side cover each 6-tile wall
+        put("wall_right", (cx - 1.47) * T, ground, 80)
+        put("wall_right", (cx + 1.47) * T, ground, 80)
+    put("sign_lagos", 33 * T, ground - 80, 58)
+    put("sign_oneway", 47 * T, ground - 80, 46)
 
     # ---- rooftops (decoration only)
-    put("ac_unit", 38 * T, 25 * T, 40)
-    put("planter", 40.6 * T, 25 * T, 36)
+    put("ac_unit", 38 * T, 25 * T, 44)
+    put("planter", 40.6 * T, 25 * T, 84)
 
     # ---- floating platforms: the sky game
     both(8, 25, 11, 25, "-")
@@ -135,20 +137,25 @@ def build():
     fill(44, 18, 46, 18, "-")
     for c0, r0, c1 in [(8, 25, 11), (68, 25, 71), (23, 22, 27), (52, 22, 56), (3, 17, 6), (73, 17, 76)]:
         w = (c1 - c0 + 1) * T
-        put("slab_a", (c0 + (c1 - c0 + 1) / 2) * T, r0 * T + 38 * w / 166, 38 * w / 166)
-    put("slab_a", 40 * T, 12 * T + 38 * 240 / 166, 38 * 240 / 166)
+        hh = SZ["slab_a"][1] * w / SZ["slab_a"][0]
+        put("slab_a", (c0 + (c1 - c0 + 1) / 2) * T, r0 * T + hh, hh)
+    hh = SZ["slab_a"][1] * 240 / SZ["slab_a"][0]
+    put("slab_a", 40 * T, 12 * T + hh, hh)
     for c0 in (33, 44):
-        put("steel_bench", (c0 + 1.5) * T, 18 * T + 27 * 120 / 104, 27 * 120 / 104)
+        hh = SZ["steel_bench"][1] * 120 / SZ["steel_bench"][0]
+        put("steel_bench", (c0 + 1.5) * T, 18 * T + hh, hh)
     return ["".join(row) for row in g], props
 
 
 GRID, PROPS = build()
 
-# (kind, col, row)  kind: "health" (no weapon pickups). row = the tile row the pickup stands on (surface is row+1)
+# (kind, col, row)  kind: "health" or weapon id. row = the tile row the pickup stands on (surface is row+1)
 PICKUPS = [
-    ("health", 5, 20), ("health", 74, 19), ("health", 37, 24), ("health", 25, 41), ("health", 54, 41), ("health", 41, 34),
+    ("health", 5, 22), ("health", 74, 23), ("health", 37, 24), ("health", 25, 41), ("health", 54, 41), ("health", 41, 34),
+    (1, 9, 28), (1, 68, 28), (1, 20, 36), (1, 59, 36), (1, 5, 37), (1, 74, 37),      # shotguns
+    (2, 39, 11), (2, 40, 11), (2, 38, 34),                                              # rockets: centre perch + the sewer ledge
 ]
-SPAWNS = [(3, 20), (75, 19), (17, 21), (61, 20), (6, 41), (73, 41)]
+SPAWNS = [(3, 22), (75, 23), (17, 22), (61, 22), (6, 41), (73, 41)]
 BACKUP_SPAWNS = [(39, 24), (12, 30), (66, 30)]
 
 SKY = ["#27304f", "#c0675a", "#f2b46b"]          # dusk over Lagos: top, middle, horizon

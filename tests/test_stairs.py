@@ -30,7 +30,7 @@ def test_spawns_and_pickups_stand_on_something():
         assert M.grid[row + 1][col] in STAND, ("pickup floats", kind, col, row)
         assert free(col, row), ("pickup inside a block", kind, col, row)
     kinds = [k for k, _, _ in M.pickups]
-    assert kinds.count("health") >= 5 and all(k == "health" for k in kinds), "health pickups only"
+    assert kinds.count("health") >= 5 and kinds.count(1) >= 4 and kinds.count(2) >= 2
 
 
 def test_everything_is_connected():

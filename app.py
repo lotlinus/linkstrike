@@ -117,10 +117,22 @@ def take_over_seat(room, new_sid, old_sid):
     return m
 
 
-def add_player(room, sid, name, device=None):
+SKIN_COUNT = 6                      # characters a player can pick (static/avatars.js lists them)
+
+
+def pick_skin(room, wanted, slot):
+    """The skin the player asked for if nobody in the room has it, otherwise the first free one."""
+    taken = {m.get("skin") for m in room.members.values()}
+    if isinstance(wanted, int) and not isinstance(wanted, bool) and 0 <= wanted < SKIN_COUNT and wanted not in taken:
+        return wanted
+    free = [i for i in range(SKIN_COUNT) if i not in taken]
+    return free[0] if free else slot % SKIN_COUNT
+
+
+def add_player(room, sid, name, device=None, skin=None):
     used = {m["id"] for m in room.members.values()}
     slot = next(i for i in range(MAX_PLAYERS) if i not in used)
-    m = {"id": slot, "name": clean_name(name), "device": rankings.clean_device(device)}
+    m = {"id": slot, "name": clean_name(name), "device": rankings.clean_device(device), "skin": pick_skin(room, skin, slot)}
     room.members[sid] = m
     room.game.add_player(slot, m["name"])
     if room.host is None:
@@ -128,16 +140,6 @@ def add_player(room, sid, name, device=None):
     sid_room[sid] = room.code
     join_room(room.code, sid=sid)
     return m
-
-
-def primary_of(room, slot):
-    p = room.game.players.get(slot)
-    return p.primary if p else G.DEFAULT_PRIMARY
-
-
-def weapon_choice_open(room):
-    """Primary weapons can be chosen in the lobby and between matches, never while a match is running."""
-    return room.state == "lobby" or room.game.phase == "over"
 
 
 def lobby_payload(room):
@@ -150,10 +152,9 @@ def lobby_payload(room):
         "min": MIN_TO_START,
         "map": room.map,
         "players": sorted(
-            ({"id": m["id"], "name": m["name"], "wpn": primary_of(room, m["id"])} for m in room.members.values()),
+            ({"id": m["id"], "name": m["name"], "skin": m.get("skin", m["id"] % SKIN_COUNT)} for m in room.members.values()),
             key=lambda m: m["id"],
         ),
-        "wpn_open": weapon_choice_open(room),
     }
 
 
@@ -242,17 +243,19 @@ def api_alcatraz():
     return resp
 
 
-@app.route("/api/weapons")
-def api_weapons():
-    return jsonify(G.catalogue())
-
-
 @app.route("/healthz")
 def healthz():
     return "ok"
 
 
 # ---------------------------------------------------------------- push notifications
+@app.route("/manifest.webmanifest")
+def manifest():
+    resp = app.send_static_file("manifest.webmanifest")
+    resp.headers["Content-Type"] = "application/manifest+json"
+    return resp
+
+
 @app.route("/sw.js")
 def service_worker():
     resp = app.send_static_file("sw.js")      # must be served from the site root to cover every page
@@ -315,7 +318,7 @@ def alcatraz_loop():
 
 
 # ---------------------------------------------------------------- sockets
-def enter_room(room, sid, name, device=None):
+def enter_room(room, sid, name, device=None, skin=None):
     """Seat a connection in a room. Returns False (after telling the player why) if the name is taken."""
     dev = rankings.clean_device(device)
     old = seat_of(room, dev, sid)
@@ -327,7 +330,7 @@ def enter_room(room, sid, name, device=None):
             emit("error_msg", {"msg": err})
             return False
         remove_player(sid)  # in case they were in another room
-        m = add_player(room, sid, final, device)
+        m = add_player(room, sid, final, device, skin)
     emit("joined", {"code": room.code, "you": m["id"]})
     if room.state == "playing":
         emit("start", {"world": G.world_payload(room.map)})
@@ -357,7 +360,7 @@ def on_create(data):
             emit("error_msg", {"msg": f"The room name {name} is in use right now. Pick another."})
             return
         roomnames.claim(name, device)                   # the owner is back: refresh, rejoin, take host again
-        if enter_room(existing, request.sid, data.get("name"), device):
+        if enter_room(existing, request.sid, data.get("name"), device, data.get("skin")):
             existing.host = request.sid
             broadcast_lobby(existing)
         return
@@ -367,7 +370,7 @@ def on_create(data):
     room = Room(name)
     room.cap = clean_cap(data.get("max_players"))
     rooms[name] = room
-    enter_room(room, request.sid, data.get("name"), device)
+    enter_room(room, request.sid, data.get("name"), device, data.get("skin"))
 
 
 @socketio.on("join")
@@ -388,7 +391,7 @@ def on_join(data):
     if not returning and len(room.members) >= cap and request.sid not in room.members:
         emit("error_msg", {"msg": f"This room is full ({cap} of {cap} players)."})
         return
-    enter_room(room, request.sid, data.get("name"), data.get("device"))
+    enter_room(room, request.sid, data.get("name"), data.get("device"), data.get("skin"))
 
 
 @socketio.on("start_game")
@@ -417,38 +420,6 @@ def on_set_map(data):
         return
     room.map = map_id
     broadcast_lobby(room)
-
-
-@socketio.on("choose_weapon")
-def on_choose_weapon(data):
-    room = rooms.get(sid_room.get(request.sid))
-    m = room.members.get(request.sid) if room else None
-    if not m:
-        return
-    if not weapon_choice_open(room):
-        emit("error_msg", {"msg": "Weapons are locked while a match is running."})
-        return
-    if room.game.set_primary(m["id"], (data or {}).get("wpn")):
-        broadcast_lobby(room)
-
-
-@socketio.on("act")
-def on_act(data):
-    """In-match actions: reload, swap between primary and Glock (or go straight to one of them)."""
-    room = rooms.get(sid_room.get(request.sid))
-    m = room.members.get(request.sid) if room else None
-    if not m:
-        return
-    a = (data or {}).get("a")
-    g = room.game
-    if a == "reload":
-        g.reload(m["id"])
-    elif a == "switch":
-        g.switch(m["id"])
-    elif a == "slot0":
-        g.switch(m["id"], 0)
-    elif a == "slot1":
-        g.switch(m["id"], 1)
 
 
 @socketio.on("rematch")
