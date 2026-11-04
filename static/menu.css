@@ -217,3 +217,15 @@
 .wbtns { gap: 8px; right: calc(8px + env(safe-area-inset-right)); bottom: 38%; }
 .wbtn { width: 50px; height: 50px; border: 1px solid rgba(243, 236, 220, .28); background: rgba(16, 17, 18, .3); color: rgba(243, 236, 220, .6); font-size: 10px; letter-spacing: .06em; }
 .wbtn:active { background: rgba(243, 236, 220, .2); }
+
+/* ---------- top-left status panel: smaller portrait, same panel size, tidier rows ---------- */
+.hud-id { box-sizing: border-box; min-height: 83px; align-items: center; gap: 14px; padding: 8px 12px 8px 10px; }
+.hud-id .face { width: 40px; height: 40px; align-self: center; }          /* was 52px (about 23% smaller) */
+.hud-bars { gap: 10px; align-content: center; }
+.hp { height: 24px; }
+#hpText { font: 700 14px/22px var(--ui); }
+.wpn { display: grid; grid-template-columns: 64px 1fr; align-items: center; gap: 12px; min-height: 30px; }
+.wpn img { width: 64px; height: 28px; max-width: none; object-fit: contain; object-position: left center; }
+.wtxt { gap: 2px; }
+#wpnText { font-size: 12px; line-height: 1; }
+#wpnAmmo { font-size: 20px; line-height: 1; }
