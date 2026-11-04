@@ -343,7 +343,19 @@ function start() {
   $("exitBtn").onclick = leaveRoom;
   $("overLeave").onclick = leaveRoom;
   $("againBtn").onclick = () => socket.emit("rematch");
-  $("fsBtn").onclick = enterFullscreen;
+  $("fsBtn").onclick = () => { enterFullscreen(); closePause(); };
+  // in-match menu (Sound, Mic, Voice, Full screen); Exit stays on the HUD
+  const closePause = () => { $("pauseSheet").hidden = true; };
+  $("pauseBtn").onclick = () => { $("pauseSheet").hidden = false; };
+  $("resumeBtn").onclick = closePause;
+  $("pauseSheet").addEventListener("click", (e) => { if (e.target === $("pauseSheet")) closePause(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closePause(); });
+  // connection bars: green (under 100 ms), yellow (under 250 ms), red (slower)
+  function setNet(ms) {
+    const q = ms < 100 ? 3 : ms < 250 ? 2 : 1;
+    $("netBars").className = "bars q" + q;
+    $("hudPing").textContent = ms;
+  }
   function toggleMute() {
     muted = !muted;
     try { localStorage.setItem("ls_mute", muted ? "1" : "0"); } catch (e) {}
@@ -544,7 +556,6 @@ function start() {
   function renderLobby() {
     if (!lobby) return;
     $("codeBtn").textContent = lobby.code;
-    $("hudRoom").textContent = lobby.code;
     $("playerCount").textContent = lobby.players.length + " of " + lobby.max;
     isHost = lobby.host === me;
     const ul = $("playerList");
@@ -652,7 +663,7 @@ function start() {
     const t0 = performance.now();
     socket.emit("pingx", () => {
       rtt = Math.round(performance.now() - t0);
-      $("hudPing").textContent = rtt + " ms";
+      setNet(rtt);
     });
   }, 2000);
 
@@ -695,7 +706,8 @@ function start() {
       $("hpFill").style.background = hp > 55 ? "#5fc24a" : hp > 25 ? "#e8b02e" : "#d24a43";
       $("hpText").textContent = hp;
       const w = world && world.weapons[String(mine[7])];
-      $("wpnText").textContent = w ? w.name + "  " + ((mine[8] & 32) ? "Reloading" : mine[10] + " / " + w.mag) : "";
+      $("wpnText").textContent = w ? w.name : "";
+      $("wpnAmmo").textContent = w ? ((mine[8] & 32) ? "Reloading" : mine[10] + " / " + w.mag) : "";
       const wi = $("wpnIcon"), wsrc = "/static/img/wpn/" + (W_ICON[mine[7]] || "glock") + ".png?v=1";
       if (wi && wi.dataset.s !== wsrc) { wi.dataset.s = wsrc; wi.src = wsrc; }
       const pt = $("hudFace");

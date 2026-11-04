@@ -175,3 +175,45 @@
 .wbtn { width: 66px; height: 66px; border-radius: 50%; border: 2px solid rgba(255, 122, 26, .8); background: rgba(16, 17, 18, .72); color: #f3ecdc; font: 700 13px "Chakra Petch", var(--ui); text-transform: uppercase; letter-spacing: .04em; touch-action: manipulation; }
 .wbtn:active { background: rgba(255, 122, 26, .35); }
 #game:not(.active) .wbtns { display: none; }
+
+
+/* ---------- gameplay HUD refresh ---------- */
+.hud-left { width: 236px; }
+.hud-id { gap: 12px; padding: 8px 10px 8px 8px; }
+.hud-id .face { width: 52px; height: 52px; align-self: center; }
+.hud-bars { gap: 9px; }
+.hp { height: 20px; }
+.wpn { gap: 10px; min-height: 30px; }
+.wpn img { height: 22px; max-width: 64px; }
+.wtxt { display: grid; gap: 1px; min-width: 0; line-height: 1.1; }
+#wpnText { font: 700 12px var(--ui); letter-spacing: .08em; color: #ffb23a; white-space: nowrap; }
+#wpnAmmo { font: 700 16px var(--ui); color: #f3ecdc; white-space: nowrap; }
+.hud-mid { gap: 8px; }
+.hud-mid .hud-btn { min-height: 34px; padding: 0 12px; }
+.hud-ic { width: 38px; padding: 0 !important; display: grid; place-items: center; }
+.pbars { width: 12px; height: 14px; border-left: 4px solid #f3ecdc; border-right: 4px solid #f3ecdc; box-sizing: border-box; }
+.net { pointer-events: none; display: flex; align-items: flex-end; gap: 5px; padding: 0 2px; }
+.net small { font: 600 10px var(--ui); color: rgba(243, 236, 220, .7); letter-spacing: .02em; }
+.bars { display: flex; align-items: flex-end; gap: 2px; height: 16px; }
+.bars i { width: 5px; border-radius: 1px; background: rgba(243, 236, 220, .25); }
+.bars i:nth-child(1) { height: 6px; } .bars i:nth-child(2) { height: 11px; } .bars i:nth-child(3) { height: 16px; }
+.bars.q3 i { background: #4ccf5a; }
+.bars.q2 i:nth-child(-n+2) { background: #f0c030; }
+.bars.q1 i:nth-child(1) { background: #e0453f; }
+.pmenu { display: grid; gap: 10px; }
+#pauseSheet > .glow { width: min(340px, 100%); }
+#pauseSheet .btn.on, #pauseSheet .mic-btn.on { background: #1f9d55; border-color: #1f9d55; color: #fff; }
+
+/* lighter touch controls; the aim stick is the FIRE control, the move stick stays neutral */
+.pad { border-color: rgba(255, 255, 255, .2); background: rgba(14, 15, 16, .22); }
+.pad.on { border-color: rgba(255, 255, 255, .5); }
+.knob { background: rgba(242, 239, 232, .45); box-shadow: none; }
+.pad.aim { border: 4px solid rgba(255, 122, 26, .55); background: rgba(255, 122, 26, .12); }
+.pad.aim.on { border-color: rgba(255, 122, 26, .95); background: rgba(255, 122, 26, .22); }
+.aim .knob { background: rgba(255, 122, 26, .75); display: grid; place-items: center; }
+.aim .knob::after { content: "FIRE"; color: #1a0f05; font: 700 14px "Chakra Petch", var(--ui); letter-spacing: .08em; }
+
+/* secondary action buttons: small and dim, so they never compete with FIRE */
+.wbtns { gap: 8px; right: calc(8px + env(safe-area-inset-right)); bottom: 38%; }
+.wbtn { width: 50px; height: 50px; border: 1px solid rgba(243, 236, 220, .28); background: rgba(16, 17, 18, .3); color: rgba(243, 236, 220, .6); font-size: 10px; letter-spacing: .06em; }
+.wbtn:active { background: rgba(243, 236, 220, .2); }

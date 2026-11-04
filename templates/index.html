@@ -13,7 +13,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Bungee&family=Barlow+Semi+Condensed:wght@500;600;700&family=Chakra+Petch:wght@500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/style.css?v=14">
 <link rel="stylesheet" href="/static/v1.css?v=1">
-<link rel="stylesheet" href="/static/menu.css?v=2">
+<link rel="stylesheet" href="/static/menu.css?v=3">
 </head>
 <body>
 
@@ -150,17 +150,13 @@
     <div class="hud-left">
       <div class="hud-id"><img id="hudFace" class="face" alt=""><div class="hud-bars">
         <div class="hp"><div id="hpFill"></div><span id="hpText">100</span></div>
-        <div class="wpn"><img id="wpnIcon" alt=""><span id="wpnText">Pistol</span></div>
+        <div class="wpn"><img id="wpnIcon" alt=""><div class="wtxt"><span id="wpnText">Pistol</span><span id="wpnAmmo"></span></div></div>
       </div></div>
     </div>
     <div class="hud-mid">
-      <span id="hudRoom"></span>
-      <span id="hudPing">-- ms</span>
-      <button id="sndBtn" class="hud-btn" aria-label="Sound on or off">Sound</button>
-      <button class="hud-btn mic-btn" type="button" aria-label="Microphone on or off">Mic off</button>
-      <button class="hud-btn vlist-btn" type="button" aria-label="Voice chat players">Voice</button>
-      <button id="fsBtn" class="hud-btn" aria-label="Fullscreen">Full</button>
-      <button id="exitBtn" class="hud-btn" aria-label="Leave match">Exit</button>
+      <div id="netChip" class="net" title="Connection"><span class="bars" id="netBars"><i></i><i></i><i></i></span><small id="hudPing">--</small></div>
+      <button id="pauseBtn" class="hud-btn hud-ic" type="button" aria-label="Menu"><span class="pbars"></span></button>
+      <button id="exitBtn" class="hud-btn" type="button" aria-label="Leave match">Exit</button>
     </div>
     <div class="hud-right">
       <ol id="board"></ol>
@@ -269,6 +265,20 @@
   </div></div></div>
 </div>
 
+<!-- IN-MATCH MENU (online matches keep running behind it) -->
+<div id="pauseSheet" class="lb-sheet" hidden role="dialog" aria-modal="true" aria-label="Menu">
+  <div class="glow blue"><div class="cut frame lb-panel"><div class="in">
+    <div class="lb-head"><div class="lb-title"><b>Menu</b><small>The match keeps going</small></div></div>
+    <div class="pmenu">
+      <button id="sndBtn" class="btn ghost" type="button">Sound</button>
+      <button class="btn ghost mic-btn" type="button">Mic off</button>
+      <button class="btn ghost vlist-btn" type="button">Voice</button>
+      <button id="fsBtn" class="btn ghost" type="button">Full screen</button>
+      <button id="resumeBtn" class="btn primary" type="button">Resume</button>
+    </div>
+  </div></div></div>
+</div>
+
 <!-- WEAPON SELECT: the primary weapon for the match, picked in the lobby -->
 <div id="wpnSheet" class="lb-sheet" hidden role="dialog" aria-modal="true" aria-label="Choose your weapon">
   <div class="glow blue"><div class="cut frame lb-panel"><div class="in">
@@ -304,6 +314,6 @@
 <script src="/static/socket.io.min.js" onerror="this.onerror=null;var s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js';s.onerror=function(){var t=document.createElement('script');t.src='https://cdn.jsdelivr.net/npm/socket.io-client@4.7.5/dist/socket.io.min.js';document.head.appendChild(t)};document.head.appendChild(s)"></script>
 <script src="/static/skins.js?v=5"></script>
 <script src="/static/avatars.js?v=1"></script>
-<script src="/static/game.js?v=25"></script>
+<script src="/static/game.js?v=26"></script>
 </body>
 </html>
