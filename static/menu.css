@@ -154,3 +154,24 @@
 .rgate b { font: 700 clamp(22px, 6vw, 30px)/1.1 "Chakra Petch", var(--ui); letter-spacing: .08em; text-transform: uppercase; }
 .rgate small { color: #a2a9b0; font: 600 14px "Chakra Petch", var(--ui); letter-spacing: .12em; text-transform: uppercase; }
 .rgate .btn { margin-top: 6px; }
+
+
+/* ---------- weapon select (lobby) + in-match swap / reload buttons ---------- */
+.wpn-select { display: flex; align-items: center; justify-content: center; gap: 10px; }
+.wpn-select img { height: 26px; max-width: 70px; object-fit: contain; }
+.wpn-select:disabled { opacity: .5; }
+#wpnSheet > .glow { width: min(680px, 100%); }
+.wt { width: 100%; border-collapse: collapse; font: 600 15px "Chakra Petch", var(--ui); color: #e9e4da; }
+.wt th { position: sticky; top: 0; background: #151617; text-align: right; padding: 6px 8px; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: #ff9a3c; }
+.wt th:first-child, .wt td:first-child { text-align: left; }
+.wt td { text-align: right; padding: 6px 8px; border-top: 1px solid #2a2c2e; }
+.wt tr.pick { cursor: pointer; }
+.wt tr.pick:active td { background: #2a2118; }
+.wt tr.on td { background: rgba(255, 122, 26, .22); }
+.wt tr.on td:first-child { box-shadow: inset 3px 0 0 #ff7a1a; }
+.wt .wn { display: flex; align-items: center; gap: 10px; }
+.wt .wn img { width: 64px; height: 28px; object-fit: contain; flex: none; }
+.wbtns { position: absolute; right: calc(12px + env(safe-area-inset-right)); bottom: 34%; z-index: 6; display: grid; gap: 10px; }
+.wbtn { width: 66px; height: 66px; border-radius: 50%; border: 2px solid rgba(255, 122, 26, .8); background: rgba(16, 17, 18, .72); color: #f3ecdc; font: 700 13px "Chakra Petch", var(--ui); text-transform: uppercase; letter-spacing: .04em; touch-action: manipulation; }
+.wbtn:active { background: rgba(255, 122, 26, .35); }
+#game:not(.active) .wbtns { display: none; }

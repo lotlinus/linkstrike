@@ -9,10 +9,19 @@ function start() {
   const SPLIT = 96;                // frame rows above this swing with the aim; legs stay put
   const TIP = 0.0;                 // the held weapon points straight ahead
   // weapon held in the hands (id -> sprite length in frame px, x from the pivot, y below the aim line)
-  const HAND = [{ len: 18, x: 12, y: 5 }, { len: 38, x: -3, y: 5 }, { len: 44, x: -10, y: 3 }];
-  const FLASH_W = [26, 46, 58];   // muzzle flash sprite width in world px, per weapon
+  const HAND = [{ len: 18, x: 12, y: 5 }, { len: 38, x: -3, y: 5 }, { len: 44, x: -10, y: 3 },
+    { len: 46, x: -4, y: 4 }, { len: 44, x: -4, y: 4 }, { len: 44, x: -4, y: 4 }, { len: 36, x: -2, y: 4 },
+    { len: 36, x: -2, y: 4 }, { len: 26, x: 4, y: 5 }, { len: 36, x: -2, y: 4 }, { len: 48, x: -6, y: 4 }, { len: 54, x: -8, y: 4 }];
+  // per weapon id: 0 Pistol, 1 Shotgun, 2 Rocket, 3 AK-47, 4 M4A1, 5 SCAR, 6 MP5, 7 UMP45, 8 MAC-10, 9 P90, 10 M249, 11 AWM
+  const W_ICON = ["glock", "shotgun", "rocket", "ak47", "m4a1", "scar", "mp5", "ump45", "mac10", "p90", "m249", "awm"];
+  const W_HAND = ["0", "1", "2", "ak47", "m4a1", "scar", "mp5", "ump45", "mac10", "p90", "m249", "awm"];
+  const W_FLASH = [0, 1, 2, 0, 1, 1, 0, 0, 0, 0, 1, 1];                         // which flash sprite
+  const FLASH_W = [26, 46, 58, 30, 38, 40, 28, 28, 26, 28, 40, 48];   // muzzle flash sprite width in world px, per weapon
+  const W_SND = ["pistol_fire", "shotgun_fire", "rocket_launch", "rifle_heavy_fire", "rifle_fire", "rifle_heavy_fire", "smg_fire", "smg_fire", "smg_fire", "smg_fire", "rifle_heavy_fire", "sniper_fire"];
+  const W_RELOAD = ["reload_pistol", "reload_shotgun", "reload_rocket", "reload_rifle", "reload_rifle", "reload_rifle", "reload_smg", "reload_smg", "reload_smg", "reload_smg", "reload_lmg", "reload_sniper"];
+  const W_VERB = [" shot ", " shredded ", " rocketed ", " shot ", " shot ", " shot ", " sprayed ", " sprayed ", " sprayed ", " sprayed ", " gunned down ", " sniped "];
   const AIM_LIMIT = 1.3;
-  const BULLET_SPEED = [1500, 1300, 760];
+  const BULLET_SPEED = [1500, 1300, 760, 2600];   // by projectile type (3 = sniper round)
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const dprNow = () => Math.min(window.devicePixelRatio || 1, 2);
 
@@ -303,6 +312,31 @@ function start() {
   };
   $("startBtn").onclick = () => { socket.emit("start_game"); enterFullscreen(); };
   $("leaveLobbyBtn").onclick = leaveRoom;
+  // weapon select: the primary weapon is chosen here and stays fixed for the match
+  function myWeapon() {
+    const m = lobby && lobby.players.find((q) => q.id === me);
+    return m ? m.weapon : 3;
+  }
+  function renderWeaponTable() {
+    if (!lobby || !lobby.weapons) return;
+    const mine = myWeapon();
+    $("wpnRows").innerHTML = lobby.weapons.map((w) =>
+      '<tr class="pick' + (w.id === mine ? " on" : "") + '" data-w="' + w.id + '"><td><span class="wn"><img src="/static/img/wpn/' + W_ICON[w.id] + '.png?v=1" alt="">' + w.name + "</span></td>" +
+      "<td>" + (w.pellets > 1 ? w.dmg + "\u00d7" + w.pellets : w.dmg) + (w.id === 2 ? " splash" : "") + "</td><td>" + w.rate + "/s</td><td>" + w.mag + "</td><td>" + w.reload + "s</td></tr>").join("");
+  }
+  const openWeapons = () => { if (lobby && (lobby.state === "lobby" || phase === "over")) { renderWeaponTable(); $("wpnSheet").hidden = false; } };
+  $("wpnBtn").onclick = openWeapons;
+  $("overWpnBtn").onclick = openWeapons;
+  $("wpnRows").addEventListener("click", (e) => {
+    const tr = e.target.closest("tr[data-w]");
+    if (!tr) return;
+    socket.emit("set_weapon", { weapon: Number(tr.dataset.w) });
+    $("wpnSheet").hidden = true;
+  });
+  const closeWpn = () => { $("wpnSheet").hidden = true; };
+  $("wpnClose").onclick = closeWpn;
+  $("wpnSheet").addEventListener("click", (e) => { if (e.target === $("wpnSheet")) closeWpn(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeWpn(); });
   for (const b of document.querySelectorAll("#mapBox .mode")) {
     b.onclick = () => { if (isHost) socket.emit("set_map", { map: b.dataset.map }); };
   }
@@ -544,6 +578,13 @@ function start() {
     $("startBtn").disabled = !canStart;
     $("startBtn").textContent = canStart ? "Start match" : "Need " + lobby.min + " players to start";
     $("waitMsg").hidden = isHost;
+    const mw = lobby.weapons && lobby.weapons.find((w) => w.id === myWeapon());
+    $("wpnBtnText").textContent = (lobby.state === "lobby" ? "Weapon: " : "Weapon locked: ") + (mw ? mw.name : "");
+    $("wpnBtnIcon").src = "/static/img/wpn/" + (W_ICON[myWeapon()] || "ak47") + ".png?v=1";
+    $("wpnBtn").disabled = lobby.state !== "lobby";
+    $("overWpnText").textContent = "Weapon: " + (mw ? mw.name : "");
+    $("overWpnIcon").src = $("wpnBtnIcon").src;
+    if (!$("wpnSheet").hidden) renderWeaponTable();
     boardKey = "";
     if (latest) updateHud();
     renderVoicePanel();
@@ -654,8 +695,8 @@ function start() {
       $("hpFill").style.background = hp > 55 ? "#5fc24a" : hp > 25 ? "#e8b02e" : "#d24a43";
       $("hpText").textContent = hp;
       const w = world && world.weapons[String(mine[7])];
-      $("wpnText").textContent = (w ? w.name : "") + "  " + (mine[10] < 0 ? "\u221E" : mine[10]);
-      const wi = $("wpnIcon"), wsrc = "/static/img/wpn/" + (mine[7] === 1 ? "shotgun" : mine[7] === 2 ? "rocket" : "glock") + ".png?v=1";
+      $("wpnText").textContent = w ? w.name + "  " + ((mine[8] & 32) ? "Reloading" : mine[10] + " / " + w.mag) : "";
+      const wi = $("wpnIcon"), wsrc = "/static/img/wpn/" + (W_ICON[mine[7]] || "glock") + ".png?v=1";
       if (wi && wi.dataset.s !== wsrc) { wi.dataset.s = wsrc; wi.src = wsrc; }
       const pt = $("hudFace");
       const fsrc = "/static/img/avatars/a" + skinOf(me) + ".jpg?v=1";
@@ -730,7 +771,7 @@ function start() {
       const b = document.createElement("span");
       b.style.color = colorOf(victim);
       b.textContent = nameOf(victim);
-      mid.textContent = [" shot ", " shredded ", " rocketed "][wpn] || " got ";
+      mid.textContent = W_VERB[wpn] || " got ";
       row.append(a, mid, b);
     }
     const feed = $("feed");
@@ -768,7 +809,9 @@ function start() {
   const SND = {};
   const SND_FILES = ["pistol_fire", "shotgun_fire", "rocket_launch", "rocket_explosion", "hit_marker", "player_hit",
     "player_death", "respawn", "kill_confirm", "weapon_pickup", "footstep_metal", "land", "button_click", "button_error",
-    "room_created", "player_joined", "player_left", "match_start", "victory", "defeat", "menu_ambient"];
+    "room_created", "player_joined", "player_left", "match_start", "victory", "defeat", "menu_ambient",
+    "smg_fire", "rifle_fire", "rifle_heavy_fire", "sniper_fire", "weapon_switch", "reload_pistol", "reload_shotgun", "reload_rocket",
+    "reload_smg", "reload_rifle", "reload_lmg", "reload_sniper"];
   let sndLoading = false, ambient = null;
   function loadSounds() {
     const a = ac();
@@ -842,12 +885,14 @@ function start() {
   const SFX = {
     shot: (w, x, y) => {
       const v = near(x, y);
-      const n = ["pistol_fire", "shotgun_fire", "rocket_launch"][w];
+      const n = W_SND[w];
       if (n && play(n, 0.55 * v, 0.96 + Math.random() * 0.08)) return;
-      if (w === 0) { noise(0.09, 4500, 800, 0.35 * v, "highpass"); tone(380, 90, 0.08, 0.12 * v, "square"); }
-      else if (w === 1) { noise(0.2, 3000, 300, 0.6 * v); tone(140, 45, 0.16, 0.25 * v, "sawtooth"); }
-      else { noise(0.35, 1200, 200, 0.5 * v); tone(200, 60, 0.3, 0.2 * v, "sawtooth"); }
+      if (w === 1) { noise(0.2, 3000, 300, 0.6 * v); tone(140, 45, 0.16, 0.25 * v, "sawtooth"); }
+      else if (w === 2) { noise(0.35, 1200, 200, 0.5 * v); tone(200, 60, 0.3, 0.2 * v, "sawtooth"); }
+      else { noise(0.09, 4500, 800, 0.35 * v, "highpass"); tone(380, 90, 0.08, 0.12 * v, "square"); }
     },
+    reload: (w) => { play(W_RELOAD[w] || "reload_pistol", 0.7); },
+    swap: () => { play("weapon_switch", 0.8); },
     boom: (x, y) => {
       const v = near(x, y);
       if (play("rocket_explosion", 0.75 * v)) return;
@@ -880,6 +925,7 @@ function start() {
   };
   function onKey(e, down) {
     if (!$("game").classList.contains("active")) return;
+    if (down && !e.repeat && (e.code === "KeyQ" || e.code === "KeyR")) { socket.emit(e.code === "KeyQ" ? "swap" : "reload"); return; }
     const k = KEYMAP[e.code];
     if (!k) return;
     e.preventDefault();
@@ -888,6 +934,10 @@ function start() {
   window.addEventListener("keydown", (e) => onKey(e, true));
   window.addEventListener("keyup", (e) => onKey(e, false));
   window.addEventListener("blur", () => { kb.l = kb.r = kb.u = kb.d = false; mouse.down = false; });
+
+  for (const [id, ev] of [["swapBtn", "swap"], ["reloadBtn", "reload"]]) {
+    $(id).addEventListener("pointerdown", (e) => { e.preventDefault(); e.stopPropagation(); socket.emit(ev); });
+  }
 
   const canvas = $("canvas");
   canvas.addEventListener("pointermove", (e) => {
@@ -974,10 +1024,8 @@ function start() {
   const skinImgs = [];
   let explImg = null;
   const handImgs = [], flashImgs = [];
-  for (let i = 0; i < 3; i++) {
-    loadImg("/static/img/wpn/hand_" + i + ".png?v=1").then((im) => { handImgs[i] = im; });
-    loadImg("/static/img/wpn/flash_" + i + ".png?v=1").then((im) => { flashImgs[i] = im; });
-  }
+  for (let i = 0; i < W_HAND.length; i++) loadImg("/static/img/wpn/hand_" + W_HAND[i] + ".png?v=1").then((im) => { handImgs[i] = im; });
+  for (let i = 0; i < 3; i++) loadImg("/static/img/wpn/flash_" + i + ".png?v=1").then((im) => { flashImgs[i] = im; });
   for (let i = 0; i < 6; i++) loadImg("/static/img/skin" + i + ".png?v=4").then((im) => { skinImgs[i] = im; });
   loadImg("/static/img/explosion.png?v=3").then((im) => { explImg = im; });
   const SK = (window.SKINS && window.SKINS.counts) || {};
@@ -1406,6 +1454,10 @@ function start() {
       if (e[1] === me && e[2] !== me) SFX.kill();
     } else if (k === "pu") {
       if (e[2] === me) SFX.pickup();
+    } else if (k === "sw") {
+      if (e[1] === me) SFX.swap();
+    } else if (k === "rl") {
+      if (e[1] === me) SFX.reload(e[2]);
     }
   }
 
@@ -1428,9 +1480,9 @@ function start() {
     for (let i = flashes.length - 1; i >= 0; i--) {
       const f = flashes[i];
       if (now - f.t0 > 70) { flashes.splice(i, 1); continue; }
-      const s = f.w === 0 ? 1 : f.w === 1 ? 1.5 : 1.9;
+      const s = f.w === 1 ? 1.5 : f.w === 2 ? 1.9 : 1;
       ctx.save(); ctx.translate(f.x, f.y); ctx.rotate(f.a);
-      const fi = flashImgs[f.w];
+      const fi = flashImgs[W_FLASH[f.w]];
       if (fi) { const fw = FLASH_W[f.w], fh = fi.height * fw / fi.width; ctx.drawImage(fi, -fw * 0.15, -fh / 2, fw, fh); ctx.restore(); continue; }
       ctx.fillStyle = "#ffb12b";
       ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(12 * s, -7 * s); ctx.lineTo(30 * s, 0); ctx.lineTo(12 * s, 7 * s); ctx.fill();
