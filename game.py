@@ -33,11 +33,32 @@ ROCKET_DMG = 85
 ROCKET_SELF = 0.6
 ROCKET_KNOCK = 760
 
+# mag = rounds per magazine, reload = seconds to reload. Reserve ammo is unlimited.
+# id 0 is the sidearm everyone carries; every other id can be picked as the primary in the lobby.
 WEAPONS = {
-    0: {"name": "Pistol",  "dmg": 18, "cd": 0.26, "speed": 1500, "ammo": -1, "pellets": 1, "spread": 0.02, "life": 0.9,  "type": 0},
-    1: {"name": "Shotgun", "dmg": 11, "cd": 0.80, "speed": 1300, "ammo": 8,  "pellets": 7, "spread": 0.20, "life": 0.32, "type": 1},
-    2: {"name": "Rocket",  "dmg": 0,  "cd": 1.10, "speed": 760,  "ammo": 4,  "pellets": 1, "spread": 0.0,  "life": 3.0,  "type": 2},
+    0:  {"name": "Pistol",  "dmg": 18, "cd": 0.26, "speed": 1500, "mag": 12,  "reload": 1.0, "pellets": 1, "spread": 0.02, "life": 0.9,  "type": 0},
+    1:  {"name": "Shotgun", "dmg": 11, "cd": 0.80, "speed": 1300, "mag": 6,   "reload": 2.2, "pellets": 7, "spread": 0.20, "life": 0.32, "type": 1},
+    2:  {"name": "Rocket",  "dmg": 0,  "cd": 1.10, "speed": 760,  "mag": 3,   "reload": 2.6, "pellets": 1, "spread": 0.0,  "life": 3.0,  "type": 2},
+    3:  {"name": "AK-47",   "dmg": 22, "cd": 0.11, "speed": 1500, "mag": 30,  "reload": 2.0, "pellets": 1, "spread": 0.04, "life": 1.0,  "type": 0},
+    4:  {"name": "M4A1",    "dmg": 17, "cd": 0.09, "speed": 1500, "mag": 30,  "reload": 1.9, "pellets": 1, "spread": 0.025, "life": 1.0, "type": 0},
+    5:  {"name": "SCAR",    "dmg": 26, "cd": 0.14, "speed": 1500, "mag": 20,  "reload": 2.2, "pellets": 1, "spread": 0.02, "life": 1.1,  "type": 0},
+    6:  {"name": "MP5",     "dmg": 12, "cd": 0.08, "speed": 1500, "mag": 30,  "reload": 1.6, "pellets": 1, "spread": 0.05, "life": 0.7,  "type": 0},
+    7:  {"name": "UMP45",   "dmg": 15, "cd": 0.10, "speed": 1500, "mag": 25,  "reload": 1.7, "pellets": 1, "spread": 0.045, "life": 0.75, "type": 0},
+    8:  {"name": "MAC-10",  "dmg": 9,  "cd": 0.06, "speed": 1500, "mag": 32,  "reload": 1.5, "pellets": 1, "spread": 0.08, "life": 0.55, "type": 0},
+    9:  {"name": "P90",     "dmg": 11, "cd": 0.07, "speed": 1500, "mag": 50,  "reload": 2.2, "pellets": 1, "spread": 0.05, "life": 0.7,  "type": 0},
+    10: {"name": "M249",    "dmg": 15, "cd": 0.08, "speed": 1500, "mag": 100, "reload": 4.0, "pellets": 1, "spread": 0.07, "life": 1.0,  "type": 0},
+    11: {"name": "AWM",     "dmg": 85, "cd": 1.50, "speed": 2600, "mag": 5,   "reload": 2.8, "pellets": 1, "spread": 0.0,  "life": 1.4,  "type": 3},
 }
+SIDEARM = 0
+DEFAULT_PRIMARY = 3
+PRIMARIES = [k for k in WEAPONS if k != SIDEARM]
+SWAP_CD = 0.25                  # seconds before you can fire after swapping
+
+
+def weapon_table():
+    """What the lobby weapon table shows (sent to every client)."""
+    return [{"id": k, "name": v["name"], "dmg": v["dmg"] or ROCKET_DMG, "pellets": v["pellets"], "rate": round(1.0 / v["cd"], 1),
+             "mag": v["mag"], "reload": v["reload"]} for k, v in WEAPONS.items() if k in PRIMARIES]
 
 SOLIDS = "#SCB"  # steel, slab, crate, building body (street map: the sprite is drawn over it)
 ONE_WAY = "=-"   # catwalk grate: land on top, fly up through ("-" = same, but a sprite is drawn instead of a grate)
@@ -104,7 +125,7 @@ PICKUPS = [
     (1, 28, 29), (1, 51, 29), (1, 16, 29), (1, 63, 29),      # shotguns: gates + gate ledges
     (2, 37, 22), (2, 42, 22),                                  # rockets: the two power spots, centre catwalk
 ]
-PICKUP_RESPAWN = {"health": 25.0, 1: 20.0, 2: 30.0}
+PICKUP_RESPAWN = {"health": 25.0}
 
 SPAWNS = [(3, 8), (76, 8), (3, 40), (76, 40), (32, 8), (40, 40)]       # 6 primary spawn points
 BACKUP_SPAWNS = [(8, 16), (9, 29), (71, 16)]                           # used when the primaries are unsafe
@@ -158,7 +179,9 @@ class MapDef:
 
     def __init__(self, id, name, grid, pickups, spawns, backups, props, art, extra=None):
         self.id, self.name, self.grid = id, name, grid
-        self.pickups, self.spawns, self.backups = pickups, spawns, backups
+        # weapons no longer spawn on the map: only medkits remain
+        self.pickups = [pk for pk in pickups if pk[0] == "health"]
+        self.spawns, self.backups = spawns, backups
         self.props, self.art, self.extra = props, art, extra or {}
 
 
@@ -186,7 +209,7 @@ def world_payload(map_id=DEFAULT_MAP):
         "map": m.id, "art": m.art,
         "pickups": [[k, c * TILE + TILE / 2, (r + 1) * TILE - 18] for k, c, r in m.pickups],
         "props": m.props,
-        "weapons": {str(k): {"name": v["name"], "ammo": v["ammo"]} for k, v in WEAPONS.items()},
+        "weapons": {str(k): {"name": v["name"], "mag": v["mag"]} for k, v in WEAPONS.items()},
     }
     out.update(m.extra)
     return out
@@ -208,8 +231,11 @@ class Player:
         self.dead = False
         self.dead_t = 0.0
         self.invuln = 0.0
-        self.wpn = 0
-        self.ammo = -1
+        self.primary = DEFAULT_PRIMARY   # chosen in the lobby, fixed for the whole match
+        self.wpn = DEFAULT_PRIMARY       # weapon in hand: the primary or the sidearm
+        self.ammo = WEAPONS[DEFAULT_PRIMARY]["mag"]    # rounds left in the magazine of the weapon in hand
+        self.mags = {DEFAULT_PRIMARY: self.ammo, SIDEARM: WEAPONS[SIDEARM]["mag"]}   # rounds in each carried weapon
+        self.reload_t = 0.0              # > 0 while reloading
         self.cd = 0.0
         self.fire_t = 0.0
         self.kills = 0
@@ -291,6 +317,41 @@ class Game:
             p.deaths = 0
             self._respawn(p, first=True, spot=spawns[i % len(spawns)])
 
+    def _load_out(self, p):
+        """Full magazines, primary in hand."""
+        p.mags = {p.primary: WEAPONS[p.primary]["mag"], SIDEARM: WEAPONS[SIDEARM]["mag"]}
+        p.wpn, p.ammo, p.reload_t = p.primary, p.mags[p.primary], 0.0
+
+    def set_primary(self, pid, wid):
+        """Lobby choice. Ignored once a match is running (it only changes between matches)."""
+        p = self.players.get(pid)
+        if p and wid in PRIMARIES:
+            p.primary = wid
+            self._load_out(p)
+
+    def swap(self, pid):
+        p = self.players.get(pid)
+        if not p or p.dead or self.phase != "play":
+            return
+        p.mags[p.wpn] = p.ammo
+        p.wpn = SIDEARM if p.wpn != SIDEARM else p.primary
+        p.ammo = p.mags[p.wpn]
+        p.reload_t = 0.0                       # swapping cancels a reload
+        p.cd = max(p.cd, SWAP_CD)
+        self.events.append(["sw", p.id, p.wpn])
+
+    def reload(self, pid):
+        p = self.players.get(pid)
+        if p and not p.dead and self.phase == "play":
+            self._start_reload(p)
+
+    def _start_reload(self, p):
+        w = WEAPONS[p.wpn]
+        if p.reload_t > 0 or p.ammo >= w["mag"]:
+            return
+        p.reload_t = w["reload"]
+        self.events.append(["rl", p.id, p.wpn])
+
     def _pick_spawn(self, p):
         """Safest spawn: far from enemies, out of their sight, not just used. Backups only win if primaries are unsafe."""
         others = [q for q in self.players.values() if q is not p and not q.dead]
@@ -319,7 +380,8 @@ class Game:
         p.x, p.y = spawn_xy(*spot)
         p.vx = p.vy = 0.0
         p.hp, p.dead, p.dead_t = MAX_HP, False, 0.0
-        p.wpn, p.ammo, p.cd = 0, -1, 0.0
+        self._load_out(p)
+        p.cd = 0.0
         p.invuln = 0.0 if first else INVULN_S
         p.ground = False
 
@@ -335,14 +397,22 @@ class Game:
     def _update_player(self, p, dt):
         p.cd = max(0.0, p.cd - dt)
         p.fire_t = max(0.0, p.fire_t - dt)
+        if p.reload_t > 0 and not p.dead:
+            p.reload_t -= dt
+            if p.reload_t <= 0:
+                p.reload_t = 0.0
+                p.ammo = WEAPONS[p.wpn]["mag"]
         p.invuln = max(0.0, p.invuln - dt)
         if p.dead:
             p.dead_t -= dt
             if p.dead_t <= 0 and self.phase == "play":
                 self._respawn(p)
         self._physics(p, dt)
-        if not p.dead and self.phase == "play" and p.fire and p.cd <= 0:
-            self._shoot(p)
+        if not p.dead and self.phase == "play" and p.fire and p.cd <= 0 and p.reload_t <= 0:
+            if p.ammo <= 0:
+                self._start_reload(p)          # trigger on an empty magazine reloads
+            else:
+                self._shoot(p)
 
     def _physics(self, p, dt):
         alive = not p.dead
@@ -432,10 +502,9 @@ class Game:
         self.events.append(["sh", p.id, round(mx), round(my), round(p.aim, 2), p.wpn])
         p.cd = w["cd"]
         p.fire_t = 0.15
-        if p.ammo > 0:
-            p.ammo -= 1
-            if p.ammo == 0:
-                p.wpn, p.ammo = 0, -1
+        p.ammo -= 1
+        if p.ammo <= 0:
+            self._start_reload(p)              # magazine empty: reload automatically
 
     def _update_projectiles(self, dt):
         keep = []
@@ -523,12 +592,9 @@ class Game:
             for p in self.players.values():
                 if p.dead or abs(p.cx - px) > PW / 2 + 20 or abs(p.cy - py) > PH / 2 + 20:
                     continue
-                if kind == "health":
-                    if p.hp >= MAX_HP:
-                        continue
-                    p.hp = min(MAX_HP, p.hp + 40)
-                else:
-                    p.wpn, p.ammo = kind, WEAPONS[kind]["ammo"]
+                if p.hp >= MAX_HP:
+                    continue
+                p.hp = min(MAX_HP, p.hp + 40)
                 self.pk_up[i] = False
                 self.pk_t[i] = PICKUP_RESPAWN[kind]
                 self.events.append(["pu", i, p.id])
@@ -539,7 +605,7 @@ class Game:
         players = []
         for p in self.players.values():
             flags = (1 if p.ground else 0) | (2 if p.thrust else 0) | (4 if p.dead else 0) \
-                | (8 if p.fire_t > 0 else 0) | (16 if p.invuln > 0 else 0)
+                | (8 if p.fire_t > 0 else 0) | (16 if p.invuln > 0 else 0) | (32 if p.reload_t > 0 else 0)
             players.append([p.id, round(p.x, 1), round(p.y, 1), round(p.vx), round(p.vy), round(p.aim, 2),
                             int(math.ceil(p.hp)), p.wpn, flags, p.kills, p.ammo, round(max(0.0, p.dead_t), 1), p.deaths])
         snap = {

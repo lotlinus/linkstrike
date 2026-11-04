@@ -177,21 +177,46 @@ def test_spawn_safety():
 
 def test_pickups():
     g = new_game(1); p = g.players[0]
-    i = next(k for k, pk in enumerate(G.PICKUPS) if pk[0] == 1)
-    _, c, r = G.PICKUPS[i]
-    put(p, c, r); p.x = c * 40 + 6
-    s = run(g, 0.2)
-    assert p.wpn == 1 and p.ammo == 8 and g.pk_up[i] is False
+    assert all(pk[0] == "health" for pk in g.map.pickups), "only medkits spawn on the map"
+    assert g.map.pickups, "map still has medkits"
+    wpn = p.wpn
     p.hp = 50
-    h = next(k for k, pk in enumerate(G.PICKUPS) if pk[0] == "health")
-    _, c, r = G.PICKUPS[h]; put(p, c, r); p.x = c * 40 + 6
+    _, c, r = g.map.pickups[0]; put(p, c, r); p.x = c * 40 + 6
     run(g, 0.2)
-    assert p.hp == 90
+    assert p.hp == 90 and p.wpn == wpn
     print("pickups ok")
+
+def test_loadout_and_reload():
+    g = new_game(2); a, b = g.players[0], g.players[1]
+    g.set_primary(0, 11)                       # AWM
+    g.restart()
+    assert a.wpn == 11 and a.ammo == G.WEAPONS[11]["mag"] and a.mags[0] == G.WEAPONS[0]["mag"]
+    g.set_primary(0, 999); assert a.primary == 11, "unknown weapon ids are ignored"
+    # magazine drains, then reloads on its own
+    a.invuln = 0; a.aim = 0.0; a.fire = True; a.cd = 0
+    run(g, 0.05)
+    assert a.ammo == G.WEAPONS[11]["mag"] - 1
+    a.ammo = 1; a.cd = 0; run(g, 0.05)
+    assert a.ammo == 0 and a.reload_t > 0, "empty magazine starts a reload"
+    a.fire = False
+    run(g, G.WEAPONS[11]["reload"] + 0.2)
+    assert a.ammo == G.WEAPONS[11]["mag"] and a.reload_t == 0
+    # swap to the pistol and back; each weapon keeps its own magazine; swapping cancels a reload
+    a.ammo = 2; g.swap(0)
+    assert a.wpn == 0 and a.ammo == G.WEAPONS[0]["mag"] and a.mags[11] == 2
+    g.reload(0); g.reload(0)                   # full mag: nothing to reload
+    assert a.reload_t == 0
+    a.ammo = 3; g.reload(0); assert a.reload_t > 0
+    g.swap(0)
+    assert a.wpn == 11 and a.ammo == 2 and a.reload_t == 0
+    # death and respawn: full mags, primary back in hand
+    a.wpn, a.ammo = 0, 1; a.dead = True; g._respawn(a)
+    assert a.wpn == 11 and a.ammo == G.WEAPONS[11]["mag"] and a.mags[0] == G.WEAPONS[0]["mag"]
+    print("loadout/reload ok")
 
 def test_snapshot_shape():
     g = new_game(3); s = g.step(DT)
-    assert len(s["p"]) == 3 and len(s["p"][0]) == 13 and len(s["k"]) == len(G.PICKUPS)
+    assert len(s["p"]) == 3 and len(s["p"][0]) == 13 and len(s["k"]) == len(g.map.pickups)
     import json; json.dumps(s)
     print("snapshot ok,", len(json.dumps(s)), "bytes")
 

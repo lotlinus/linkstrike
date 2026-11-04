@@ -132,7 +132,8 @@ def pick_skin(room, wanted, slot):
 def add_player(room, sid, name, device=None, skin=None):
     used = {m["id"] for m in room.members.values()}
     slot = next(i for i in range(MAX_PLAYERS) if i not in used)
-    m = {"id": slot, "name": clean_name(name), "device": rankings.clean_device(device), "skin": pick_skin(room, skin, slot)}
+    m = {"id": slot, "name": clean_name(name), "device": rankings.clean_device(device), "skin": pick_skin(room, skin, slot),
+         "weapon": G.DEFAULT_PRIMARY}
     room.members[sid] = m
     room.game.add_player(slot, m["name"])
     if room.host is None:
@@ -151,8 +152,10 @@ def lobby_payload(room):
         "max": room.cap,
         "min": MIN_TO_START,
         "map": room.map,
+        "weapons": G.weapon_table(),
         "players": sorted(
-            ({"id": m["id"], "name": m["name"], "skin": m.get("skin", m["id"] % SKIN_COUNT)} for m in room.members.values()),
+            ({"id": m["id"], "name": m["name"], "skin": m.get("skin", m["id"] % SKIN_COUNT),
+              "weapon": m.get("weapon", G.DEFAULT_PRIMARY)} for m in room.members.values()),
             key=lambda m: m["id"],
         ),
     }
@@ -420,6 +423,38 @@ def on_set_map(data):
         return
     room.map = map_id
     broadcast_lobby(room)
+
+
+@socketio.on("set_weapon")
+def on_set_weapon(data):
+    """A player's primary weapon. Only in the lobby or on the game-over screen: it stays fixed during a match."""
+    room = rooms.get(sid_room.get(request.sid))
+    m = room.members.get(request.sid) if room else None
+    try:
+        wid = int((data or {}).get("weapon"))
+    except (TypeError, ValueError):
+        return
+    if not m or wid not in G.PRIMARIES or not (room.state == "lobby" or room.game.phase == "over"):
+        return
+    m["weapon"] = wid
+    room.game.set_primary(m["id"], wid)
+    broadcast_lobby(room)
+
+
+@socketio.on("swap")
+def on_swap():
+    room = rooms.get(sid_room.get(request.sid))
+    m = room.members.get(request.sid) if room else None
+    if m:
+        room.game.swap(m["id"])
+
+
+@socketio.on("reload")
+def on_reload():
+    room = rooms.get(sid_room.get(request.sid))
+    m = room.members.get(request.sid) if room else None
+    if m:
+        room.game.reload(m["id"])
 
 
 @socketio.on("rematch")

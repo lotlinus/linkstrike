@@ -13,7 +13,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Bungee&family=Barlow+Semi+Condensed:wght@500;600;700&family=Chakra+Petch:wght@500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/style.css?v=14">
 <link rel="stylesheet" href="/static/v1.css?v=1">
-<link rel="stylesheet" href="/static/menu.css?v=1">
+<link rel="stylesheet" href="/static/menu.css?v=2">
 </head>
 <body>
 
@@ -130,6 +130,7 @@
             <button id="mapStairs" class="mode" type="button" data-map="stairs"><img src="/static/img/map_stairs.jpg?v=1" alt=""><span><b>Staircase</b><small>Stairs, a top corridor, a big hall and a basement with ladders.</small></span></button>
           </div>
         </div>
+        <button id="wpnBtn" class="btn ghost wpn-select" type="button"><img id="wpnBtnIcon" alt=""><span id="wpnBtnText">Weapon</span></button>
         <button id="startBtn" class="btn primary" hidden>Start match</button>
         <p id="waitMsg" class="hint" hidden>Waiting for the host to start.</p>
         <button id="leaveLobbyBtn" class="btn ghost small">Leave room</button>
@@ -167,12 +168,17 @@
     </div>
     <div id="banner" class="banner" hidden></div>
   </div>
+  <div id="wbtns" class="wbtns">
+    <button id="swapBtn" class="wbtn" type="button" aria-label="Swap weapon">Swap</button>
+    <button id="reloadBtn" class="wbtn" type="button" aria-label="Reload">Reload</button>
+  </div>
 
   <div id="over" class="over" hidden>
     <div class="card over-card">
       <h2 id="overTitle"></h2>
       <p id="overSub" class="over-sub" hidden></p>
       <ol id="overBoard"></ol>
+      <button id="overWpnBtn" class="btn ghost wpn-select" type="button"><img id="overWpnIcon" alt=""><span id="overWpnText">Weapon</span></button>
       <button id="againBtn" class="btn primary" hidden>Play again</button>
       <p id="againWait" class="hint" hidden>Waiting for the host to start a new match.</p>
       <button id="overLeave" class="btn ghost small">Leave room</button>
@@ -263,6 +269,17 @@
   </div></div></div>
 </div>
 
+<!-- WEAPON SELECT: the primary weapon for the match, picked in the lobby -->
+<div id="wpnSheet" class="lb-sheet" hidden role="dialog" aria-modal="true" aria-label="Choose your weapon">
+  <div class="glow blue"><div class="cut frame lb-panel"><div class="in">
+    <div class="lb-head">
+      <div class="lb-title"><b>Choose your weapon</b><small>Locked for the whole match &middot; everyone also carries a pistol</small></div>
+      <button id="wpnClose" class="lb-all" type="button">Close</button>
+    </div>
+    <div class="lb-scroll"><table class="wt"><thead><tr><th>Weapon</th><th>Dmg</th><th>Rate</th><th>Mag</th><th>Reload</th></tr></thead><tbody id="wpnRows"></tbody></table></div>
+  </div></div></div>
+</div>
+
 <!-- ROTATE GATE: phones held upright are asked to go landscape (one tap does it where the browser allows) -->
 <div id="rotateGate" class="rgate" hidden role="dialog" aria-modal="true" aria-label="Rotate your phone">
   <svg class="rg-ico" viewBox="0 0 64 64" aria-hidden="true"><rect x="22" y="8" width="20" height="36" rx="4" fill="none" stroke="currentColor" stroke-width="3"/><path d="M12 50c6 8 18 10 28 4M44 54l-3 6-5-5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -287,6 +304,6 @@
 <script src="/static/socket.io.min.js" onerror="this.onerror=null;var s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js';s.onerror=function(){var t=document.createElement('script');t.src='https://cdn.jsdelivr.net/npm/socket.io-client@4.7.5/dist/socket.io.min.js';document.head.appendChild(t)};document.head.appendChild(s)"></script>
 <script src="/static/skins.js?v=5"></script>
 <script src="/static/avatars.js?v=1"></script>
-<script src="/static/game.js?v=23"></script>
+<script src="/static/game.js?v=25"></script>
 </body>
 </html>
