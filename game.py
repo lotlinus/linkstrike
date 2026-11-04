@@ -12,6 +12,7 @@ COLS, ROWS = 80, 44
 W, H = COLS * TILE, ROWS * TILE
 PW, PH = 28, 54                 # player hitbox
 TARGET_KILLS = 10
+FINAL_S = 3.0                   # seconds between the winning kill and the results screen (client plays a slow-mo finisher)
 
 MAX_PLAYERS = 6                 # room size (6 skins / colours)
 
@@ -266,8 +267,9 @@ class Game:
         self.players = {}
         self.projs = []
         self.events = []
-        self.phase = "play"     # "play" or "over"
+        self.phase = "play"     # "play", "final" (winning kill, finisher playing) or "over"
         self.winner = -1
+        self.final_t = 0.0
         self.set_map(map_id)
         self.clock = 0.0
         self.spawn_used = {}    # spawn point -> time it was last used
@@ -302,7 +304,7 @@ class Game:
     def restart(self, map_id=None):
         if map_id in MAPS:
             self.set_map(map_id)
-        self.phase, self.winner = "play", -1
+        self.phase, self.winner, self.final_t = "play", -1, 0.0
         self.projs.clear()
         self.pk_up = [True] * len(self.map.pickups)
         self.pk_t = [0.0] * len(self.map.pickups)
@@ -388,6 +390,10 @@ class Game:
     # ---- simulation
     def step(self, dt):
         self.clock += dt
+        if self.phase == "final":
+            self.final_t -= dt
+            if self.final_t <= 0:
+                self.phase = "over"
         for p in self.players.values():
             self._update_player(p, dt)
         self._update_pickups(dt)
@@ -579,7 +585,7 @@ class Game:
             killer.kills += 1
         self.events.append(["k", attacker_id, victim.id, wpn])
         if killer and killer is not victim and killer.kills >= TARGET_KILLS:
-            self.phase, self.winner = "over", killer.id
+            self.phase, self.winner, self.final_t = "final", killer.id, FINAL_S
 
     def _update_pickups(self, dt):
         for i, (kind, c, r) in enumerate(self.map.pickups):

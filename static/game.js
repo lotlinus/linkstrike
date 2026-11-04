@@ -29,6 +29,9 @@ function start() {
   let me = null, code = null, world = null, isHost = false, lobby = null;
   let snaps = [], evq = [], rtt = null, rafId = 0, toastTimer = 0;
   let phase = "play", winner = -1, overShown = false;
+  // Final-kill finisher: slow-mo + zoom on the victim, then a swing to the killer.
+  const FIN_SLOW = 0.25, FIN_MAX_S = 4;
+  let pnow = 0, fxMs = 0, zoomCur = 1, finisher = null, finQueued = false, lastKill = null;
   let latest = null;
   let localAim = 0, myPos = null;
   let shake = 0, hurtFlash = 0, lastFrame = 0, boardKey = "";
@@ -636,6 +639,7 @@ function start() {
     pst.clear(); parts.length = 0; expls.length = 0; flashes.length = 0;
     $("over").hidden = true; $("feed").textContent = "";
     phase = "play"; overShown = false;
+    clearFinisher(); finQueued = false; lastKill = null;
     buildTiles();
     show("game");
     play("match_start", 0.9);
@@ -644,11 +648,18 @@ function start() {
   socket.on("state", (d) => {
     const at = performance.now();
     snaps.push({ at, p: d.p, b: d.b });
-    if (snaps.length > 12) snaps.shift();
+    if (snaps.length > (finQueued ? 150 : 12)) snaps.shift();
     for (const e of d.e) evq.push({ due: at + INTERP_MS, e });
+    if (d.m[0] === "final" && !finQueued) {       // the winning kill is in this snapshot: start the finisher after its events
+      finQueued = true;
+      evq.push({ due: at + INTERP_MS, e: ["fin", d.m[1]] });
+    } else if (d.m[0] === "play" && finQueued) {  // rematch
+      finQueued = false; lastKill = null; clearFinisher();
+    }
     latest = d;
     trackPlayers(d, at);
     phase = d.m[0]; winner = d.m[1];
+    if (phase === "over" && finisher) clearFinisher();   // results screen takes over
     updateHud();
   });
 
@@ -1444,10 +1455,28 @@ function start() {
     }
   }
 
+  // ---- final-kill finisher
+  function startFinisher(winnerId) {
+    if (!lastKill || lastKill.killer !== winnerId) return;   // joined mid-finisher: nothing to replay
+    finisher = { r0: performance.now(), killer: lastKill.killer, victim: lastKill.victim };
+    const b = $("finalBanner"), who = $("finalWho"), ic = $("finalIcon");
+    who.textContent = nameOf(lastKill.killer);
+    who.style.color = colorOf(lastKill.killer);
+    ic.src = "/static/img/wpn/" + (W_ICON[lastKill.wpn] || "glock") + ".png?v=1";
+    b.hidden = false;
+    b.classList.remove("go"); void b.offsetWidth; b.classList.add("go");
+  }
+
+  function clearFinisher() {
+    finisher = null; zoomCur = 1;
+    const b = $("finalBanner");
+    if (b) b.hidden = true;
+  }
+
   function handleEvent(e) {
     const k = e[0];
     if (k === "sh") {
-      flashes.push({ x: e[2], y: e[3], a: e[4], w: e[5], t0: performance.now() });
+      flashes.push({ x: e[2], y: e[3], a: e[4], w: e[5], t0: fxMs });
       SFX.shot(e[5], e[2], e[3]);
       if (e[5] === 2) for (let i = 0; i < 4; i++) addPart(e[2], e[3], (Math.random() - 0.5) * 60, (Math.random() - 0.5) * 60, 0.6, 7, "#b8bfcc", -20, true);
     } else if (k === "hit") {
@@ -1455,15 +1484,18 @@ function start() {
     } else if (k === "bl") {
       sparks(e[1], e[2], 9, "#c0392b", 220); SFX.bleed(e[1], e[2]);
     } else if (k === "ex") {
-      expls.push({ x: e[1], y: e[2], r: e[3], t0: performance.now() });
+      expls.push({ x: e[1], y: e[2], r: e[3], t0: fxMs });
       sparks(e[1], e[2], 18, "#ff9f43", 520);
       for (let i = 0; i < 10; i++) addPart(e[1], e[2], (Math.random() - 0.5) * 240, (Math.random() - 0.5) * 240 - 40, 0.9, 10 + Math.random() * 8, "#6b7280", -30, true);
       SFX.boom(e[1], e[2]);
       shake = Math.min(16, shake + Math.max(0, 16 - Math.hypot(e[1] - cam.x, e[2] - cam.y) / 60));
     } else if (k === "k") {
       feedRow(e[1], e[2], e[3]);
+      lastKill = { killer: e[1], victim: e[2], wpn: e[3] };
       SFX.death(e[2] === me);
       if (e[1] === me && e[2] !== me) SFX.kill();
+    } else if (k === "fin") {
+      startFinisher(e[1]);
     } else if (k === "pu") {
       if (e[2] === me) SFX.pickup();
     } else if (k === "sw") {
@@ -1582,17 +1614,37 @@ function start() {
       return;
     }
 
-    while (evq.length && evq[0].due <= now) handleEvent(evq.shift().e);
+    // playback clock: real time normally, slowed during the final-kill finisher
+    if (finisher && (now - finisher.r0) / 1000 > FIN_MAX_S) clearFinisher();
+    const slow = finisher ? FIN_SLOW : 1;
+    pnow = finisher ? pnow + dt * 1000 * slow : now;
+    fxMs += dt * 1000 * slow;
+    const fdt = dt * slow;
 
-    const sc = Math.min(window.innerWidth / 800, window.innerHeight / 440) * dpr;
-    const cur = interpolated(now);
+    while (evq.length && evq[0].due <= pnow) handleEvent(evq.shift().e);
+
+    const base = Math.min(window.innerWidth / 800, window.innerHeight / 440) * dpr;
+    const cur = interpolated(pnow);
     const mine = cur.players.find((p) => p[0] === me);
-    if (mine) {
-      myPos = { x: mine[1] + world.pw / 2, y: mine[2] + 31 };
+    if (mine) myPos = { x: mine[1] + world.pw / 2, y: mine[2] + 31 };
+    if (finisher) {
+      // 0-1.3s: hold on the victim, 1.3-2.3s: swing across to the killer
+      const e = (now - finisher.r0) / 1000;
+      const vp = cur.players.find((p) => p[0] === finisher.victim);
+      const kp = cur.players.find((p) => p[0] === finisher.killer) || vp;
+      if (vp) {
+        const t = clamp((e - 1.3) / 1.0, 0, 1), s = t * t * (3 - 2 * t);
+        const tx = vp[1] + (kp[1] - vp[1]) * s + world.pw / 2, ty = vp[2] + (kp[2] - vp[2]) * s + world.ph / 2;
+        const k = Math.min(1, dt * 6);
+        cam.x += (tx - cam.x) * k; cam.y += (ty - cam.y) * k;
+      }
+      zoomCur += ((e < 1.3 ? 1.8 : 1.5) - zoomCur) * Math.min(1, dt * 4);
+    } else if (mine) {
       const k = Math.min(1, dt * 9);
       cam.x += (mine[1] + world.pw / 2 - cam.x) * k;
       cam.y += (mine[2] + world.ph / 2 - cam.y) * k;
     }
+    const sc = base * zoomCur;
     const halfW = cw / sc / 2, halfH = ch / sc / 2;
     const wW = world.cols * T, wH = world.rows * T;
     cam.x = wW <= halfW * 2 ? wW / 2 : clamp(cam.x, halfW, wW - halfW);
@@ -1607,10 +1659,10 @@ function start() {
     drawTiles(vx0, vy0, vx1, vy1, 0);
     drawProps();
     drawTiles(vx0, vy0, vx1, vy1, 1);
-    drawPickups(now);
+    drawPickups(pnow);
     drawBullets(cur.bullets);
-    for (const p of cur.players) drawSoldier(p, now);
-    drawEffects(now, dt);
+    for (const p of cur.players) drawSoldier(p, pnow);
+    drawEffects(fxMs, fdt);
 
     if (hurtFlash > 0.01) {
       ctx.setTransform(1, 0, 0, 1, 0, 0);

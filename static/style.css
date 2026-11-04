@@ -556,3 +556,14 @@ h2 { margin: 0; font: 400 22px var(--display); }
 #vList .vs { min-width: 84px; text-align: right; }
 #audioBtn { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 70; background: #ff9d1c; color: #1a1000; border: 0; padding: 12px 18px; border-radius: 12px; font-weight: 700; }
 #audioBtn[hidden] { display: none; }
+
+/* final-kill finisher banner */
+.final-banner { position: absolute; left: 50%; top: 52px; transform: translateX(-50%); z-index: 4; display: flex; align-items: center; gap: 10px;
+  padding: 5px 16px; border-radius: 8px; background: rgba(8, 8, 9, .72); border: 1px solid rgba(255, 255, 255, .25); white-space: nowrap;
+  font: 700 clamp(13px, 3vw, 20px) var(--ui); letter-spacing: .06em; text-transform: uppercase; color: #fff; pointer-events: none;
+  text-shadow: 0 2px 6px #000; }
+.final-banner[hidden] { display: none; }
+.final-banner img { height: 20px; width: auto; max-width: 64px; object-fit: contain; image-rendering: pixelated; }
+.final-banner b { color: #ff7a1a; letter-spacing: .12em; }
+.final-banner.go { animation: finIn .45s cubic-bezier(.2, .9, .3, 1.2) both; }
+@keyframes finIn { from { opacity: 0; transform: translateX(-50%) scale(1.5); } to { opacity: 1; transform: translateX(-50%) scale(1); } }

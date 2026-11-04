@@ -111,7 +111,13 @@ def test_combat_and_win():
     a.fire = True; a.aim = 0.0
     for _ in range(400):
         snap = g.step(DT)
-        if g.phase == "over": break
+        if g.phase == "final": break
+    assert g.phase == "final" and g.winner == 0, (g.phase, g.winner)
+    # 3-second finisher window: no more damage or kills, then the results screen
+    k0 = a.kills
+    for _ in range(int((G.FINAL_S - 0.5) / DT)): g.step(DT)
+    assert g.phase == "final" and a.kills == k0
+    for _ in range(int(1.0 / DT)): g.step(DT)
     assert g.phase == "over" and g.winner == 0, (g.phase, g.winner)
     print("first-to-10 win ok")
     g.restart()
