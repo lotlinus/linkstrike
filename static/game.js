@@ -707,7 +707,7 @@ function start() {
       $("hpText").textContent = hp;
       const w = world && world.weapons[String(mine[7])];
       $("wpnText").textContent = w ? w.name : "";
-      $("wpnAmmo").textContent = w ? ((mine[8] & 32) ? "Reloading" : mine[10] + " / " + w.mag) : "";
+      $("wpnAmmo").textContent = w ? ((mine[8] & 32) ? "Reload" : mine[10] + " / " + w.mag) : "";
       const wi = $("wpnIcon"), wsrc = "/static/img/wpn/" + (W_ICON[mine[7]] || "glock") + ".png?v=1";
       if (wi && wi.dataset.s !== wsrc) { wi.dataset.s = wsrc; wi.src = wsrc; }
       const pt = $("hudFace");

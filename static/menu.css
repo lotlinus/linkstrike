@@ -218,14 +218,16 @@
 .wbtn { width: 50px; height: 50px; border: 1px solid rgba(243, 236, 220, .28); background: rgba(16, 17, 18, .3); color: rgba(243, 236, 220, .6); font-size: 10px; letter-spacing: .06em; }
 .wbtn:active { background: rgba(243, 236, 220, .2); }
 
-/* ---------- top-left status panel: smaller portrait, same panel size, tidier rows ---------- */
-.hud-id { box-sizing: border-box; min-height: 83px; align-items: center; gap: 14px; padding: 8px 12px 8px 10px; }
-.hud-id .face { width: 40px; height: 40px; align-self: center; }          /* was 52px (about 23% smaller) */
-.hud-bars { gap: 10px; align-content: center; }
-.hp { height: 24px; }
-#hpText { font: 700 14px/22px var(--ui); }
-.wpn { display: grid; grid-template-columns: 64px 1fr; align-items: center; gap: 12px; min-height: 30px; }
-.wpn img { width: 64px; height: 28px; max-width: none; object-fit: contain; object-position: left center; }
-.wtxt { gap: 2px; }
-#wpnText { font-size: 12px; line-height: 1; }
-#wpnAmmo { font-size: 20px; line-height: 1; }
+/* ---------- top-left status panel: compact (portrait + health bar, weapon icon, name and ammo on one row) ---------- */
+.hud-left { width: 164px; }
+.hud-id { box-sizing: border-box; min-height: 46px; align-items: center; gap: 8px; padding: 6px 8px 6px 6px;
+  clip-path: polygon(5px 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%, 0 5px); }
+.hud-id .face { width: 32px; height: 32px; align-self: center; }
+.hud-bars { gap: 5px; align-content: center; }
+.hp { height: 13px; }
+#hpText { font: 700 10px/11px var(--ui); }
+.wpn { display: flex; align-items: center; gap: 6px; min-height: 0; }
+.wpn img { width: 22px; height: 13px; max-width: none; object-fit: contain; flex: none; }
+.wtxt { display: flex; align-items: baseline; gap: 5px; white-space: nowrap; }
+#wpnText { font-size: 9px; line-height: 1; }
+#wpnAmmo { font-size: 12px; line-height: 1; }
