@@ -1,0 +1,687 @@
+"""Link Strike game rules: map, jetpack physics, weapons, pickups, scoring.
+
+No Flask/SocketIO in here, so it can be tested on its own (see tests/test_game.py).
+The server calls Game.step(dt) 30 times a second and broadcasts the snapshot it returns.
+"""
+import math
+import random
+
+# ------------------------------------------------------------------ constants
+TILE = 40
+COLS, ROWS = 80, 44
+W, H = COLS * TILE, ROWS * TILE
+PW, PH = 28, 54                 # player hitbox
+TARGET_KILLS = 10
+COUNTDOWN_S = 3.0               # "3, 2, 1" before a match starts: everyone is frozen and can't shoot
+DURATIONS = (180, 300, 600)     # match lengths (seconds) the host can pick; 300 (5 min) is the default
+DEFAULT_DURATION = 300
+FINAL_S = 3.0                   # seconds between the winning kill and the results screen (client plays a slow-mo finisher)
+
+MAX_PLAYERS = 6                 # room size (6 skins / colours)
+
+SPEED = 390                     # px/s sideways
+ACC_GROUND, ACC_AIR = 2800, 1700
+FRIC_GROUND, FRIC_AIR = 3200, 450
+GRAVITY = 1200                  # px/s^2
+THRUST = 4300                   # jetpack push; net upward accel = THRUST - GRAVITY
+MAX_UP, MAX_FALL = 400, 820
+
+MAX_HP = 100
+RESPAWN_S = 3.0
+INVULN_S = 1.5
+SHOULDER_DY = 12                # muzzle origin: this far below the top of the hitbox
+MUZZLE_LEN = 26
+
+ROCKET_RADIUS = 130
+ROCKET_DMG = 85
+ROCKET_SELF = 0.6
+ROCKET_KNOCK = 760
+
+# mag = rounds per magazine, reload = seconds to reload. Reserve ammo is unlimited.
+# id 0 is the sidearm everyone carries; every other id can be picked as the primary in the lobby.
+WEAPONS = {
+    0:  {"name": "Pistol",  "dmg": 18, "cd": 0.26, "speed": 1500, "mag": 12,  "reload": 1.0, "pellets": 1, "spread": 0.02, "life": 0.9,  "type": 0},
+    1:  {"name": "Shotgun", "dmg": 11, "cd": 0.80, "speed": 1300, "mag": 6,   "reload": 2.2, "pellets": 7, "spread": 0.20, "life": 0.32, "type": 1},
+    2:  {"name": "Rocket",  "dmg": 0,  "cd": 1.10, "speed": 760,  "mag": 3,   "reload": 2.6, "pellets": 1, "spread": 0.0,  "life": 3.0,  "type": 2},
+    3:  {"name": "AK-47",   "dmg": 22, "cd": 0.11, "speed": 1500, "mag": 30,  "reload": 2.0, "pellets": 1, "spread": 0.04, "life": 1.0,  "type": 0},
+    4:  {"name": "M4A1",    "dmg": 17, "cd": 0.09, "speed": 1500, "mag": 30,  "reload": 1.9, "pellets": 1, "spread": 0.025, "life": 1.0, "type": 0},
+    5:  {"name": "SCAR",    "dmg": 26, "cd": 0.14, "speed": 1500, "mag": 20,  "reload": 2.2, "pellets": 1, "spread": 0.02, "life": 1.1,  "type": 0},
+    6:  {"name": "MP5",     "dmg": 12, "cd": 0.08, "speed": 1500, "mag": 30,  "reload": 1.6, "pellets": 1, "spread": 0.05, "life": 0.7,  "type": 0},
+    7:  {"name": "UMP45",   "dmg": 15, "cd": 0.10, "speed": 1500, "mag": 25,  "reload": 1.7, "pellets": 1, "spread": 0.045, "life": 0.75, "type": 0},
+    8:  {"name": "MAC-10",  "dmg": 9,  "cd": 0.06, "speed": 1500, "mag": 32,  "reload": 1.5, "pellets": 1, "spread": 0.08, "life": 0.55, "type": 0},
+    9:  {"name": "P90",     "dmg": 11, "cd": 0.07, "speed": 1500, "mag": 50,  "reload": 2.2, "pellets": 1, "spread": 0.05, "life": 0.7,  "type": 0},
+    10: {"name": "M249",    "dmg": 15, "cd": 0.08, "speed": 1500, "mag": 100, "reload": 4.0, "pellets": 1, "spread": 0.07, "life": 1.0,  "type": 0},
+    11: {"name": "AWM",     "dmg": 85, "cd": 1.50, "speed": 2600, "mag": 5,   "reload": 2.8, "pellets": 1, "spread": 0.0,  "life": 1.4,  "type": 3},
+}
+SIDEARM = 0
+DEFAULT_PRIMARY = 3
+PRIMARIES = [k for k in WEAPONS if k != SIDEARM]
+SWAP_CD = 0.25                  # seconds before you can fire after swapping
+
+
+def weapon_table():
+    """What the lobby weapon table shows (sent to every client)."""
+    return [{"id": k, "name": v["name"], "dmg": v["dmg"] or ROCKET_DMG, "pellets": v["pellets"], "rate": round(1.0 / v["cd"], 1),
+             "mag": v["mag"], "reload": v["reload"]} for k, v in WEAPONS.items() if k in PRIMARIES]
+
+SOLIDS = "#SCB"  # steel, slab, crate, building body (street map: the sprite is drawn over it)
+ONE_WAY = "=-"   # catwalk grate: land on top, fly up through ("-" = same, but a sprite is drawn instead of a grate)
+
+
+# ------------------------------------------------------------------ the map: the Laboratory
+# Side-view cross-section of the lab blueprint: a reactor chamber in the middle, a ring of
+# routes around it (roof, left shaft, right shaft, service tunnel underneath).
+#   gates   : left/right doorways into the chamber (3 tiles tall, floor level)
+#   hatches : roof hatch and floor hatch above/below the chamber centre
+#   centre  : catwalk with the two power weapons (rockets)
+def build_map():
+    g = [["."] * COLS for _ in range(ROWS)]
+
+    def fill(c0, r0, c1, r1, ch):
+        for r in range(r0, r1 + 1):
+            for c in range(c0, c1 + 1):
+                g[r][c] = ch
+
+    def both(c0, r0, c1, r1, ch):            # a block and its mirror image
+        fill(c0, r0, c1, r1, ch)
+        fill(COLS - 1 - c1, r0, COLS - 1 - c0, r1, ch)
+
+    # shell: invisible ceiling, side walls, ground slab (standing row on the ground = 40)
+    fill(0, 0, COLS - 1, 0, "#")
+    fill(0, 0, 0, ROWS - 1, "#")
+    fill(COLS - 1, 0, COLS - 1, ROWS - 1, "#")
+    fill(0, 41, COLS - 1, 43, "S")
+
+    # reactor chamber (cols 25-54)
+    fill(25, 9, 54, 10, "S"); fill(37, 9, 42, 10, ".")        # roof + roof hatch
+    fill(25, 11, 26, 26, "#"); fill(53, 11, 54, 26, "#")      # walls; rows 27-29 stay open = gates
+    fill(25, 30, 54, 31, "S"); fill(38, 30, 41, 31, ".")      # floor + floor hatch
+
+    # inside the chamber
+    fill(34, 23, 45, 23, "=")                                 # centre catwalk (power weapons)
+    fill(34, 28, 35, 29, "C"); fill(44, 28, 45, 29, "C")      # cover under the catwalk
+    fill(28, 17, 33, 17, "="); fill(46, 17, 51, 17, "=")      # side perches
+    fill(33, 14, 36, 14, "="); fill(43, 14, 46, 14, "=")      # high perches beside the hatch
+
+    # service tunnel under the chamber
+    fill(32, 39, 33, 40, "C"); fill(46, 39, 47, 40, "C")
+    fill(28, 36, 35, 36, "="); fill(44, 36, 51, 36, "=")
+
+    # outer shafts (built once, mirrored)
+    both(1, 9, 10, 10, "S")        # upper corner ledge (spawn)
+    both(8, 7, 9, 8, "C")          # cover beside the upper spawn
+    both(14, 12, 22, 12, "=")      # high route towards the roof
+    both(4, 17, 14, 17, "=")       # upper catwalk
+    both(14, 23, 23, 23, "=")      # mid catwalk
+    both(2, 30, 10, 30, "=")       # low catwalk
+    both(12, 30, 24, 31, "S")      # gate ledge (leads to the chamber gate)
+    both(12, 39, 13, 40, "C")      # ground cover
+    both(20, 37, 21, 40, "C")      # pillar
+
+    return ["".join(row) for row in g]
+
+
+GRID = build_map()
+
+# (kind, col, row)  kind: "health" or weapon id. row = floor-standing tile row
+PICKUPS = [
+    ("health", 20, 22), ("health", 59, 22), ("health", 6, 29), ("health", 73, 29), ("health", 46, 8),
+    (1, 28, 29), (1, 51, 29), (1, 16, 29), (1, 63, 29),      # shotguns: gates + gate ledges
+    (2, 37, 22), (2, 42, 22),                                  # rockets: the two power spots, centre catwalk
+]
+PICKUP_RESPAWN = {"health": 25.0}
+
+SPAWNS = [(3, 8), (76, 8), (3, 40), (76, 40), (32, 8), (40, 40)]       # 6 primary spawn points
+BACKUP_SPAWNS = [(8, 16), (9, 29), (71, 16)]                           # used when the primaries are unsafe
+
+# Decoration only (client draws it): [sprite, col, row, scale, anchor]. "b" = bottom edge sits on row*TILE, "t" = top edge hangs from it.
+PROPS = [
+    ["door_open", 26, 30, 0.85, "b"], ["door_open", 54, 30, 0.85, "b"],
+    ["tank_green", 30, 30, 0.55, "b"], ["tank_blue", 49, 30, 0.6, "b"],
+    ["term_rack", 32, 30, 0.5, "b"], ["term_desk", 47, 30, 0.5, "b"],
+    ["light_cyan", 33, 11, 0.5, "t"], ["light_cyan", 46, 11, 0.5, "t"], ["light_amber", 40, 11, 0.5, "t"],
+    ["pipe_long", 30, 13, 0.6, "b"], ["pipe_long", 49, 13, 0.6, "b"], ["light_red", 28, 11, 0.5, "t"], ["light_red", 51, 11, 0.5, "t"],
+    ["pipe_long", 29, 33, 0.7, "t"], ["pipe_long", 40, 33, 0.7, "t"], ["pipe_long", 51, 33, 0.7, "t"],
+    ["pipe_bundle", 36, 32, 0.45, "t"], ["pipe_bundle", 44, 32, 0.45, "t"], ["term_kiosk", 29, 41, 0.6, "b"], ["term_rack", 50, 41, 0.55, "b"],
+    ["term_desk", 5, 9, 0.5, "b"], ["term_desk", 74, 9, 0.5, "b"], ["tank_small", 12, 17, 0.6, "b"], ["tank_small", 67, 17, 0.6, "b"],
+    ["term_arcade", 8, 41, 0.6, "b"], ["term_arcade", 71, 41, 0.6, "b"], ["tank_blue", 17, 41, 0.7, "b"], ["tank_green", 62, 41, 0.7, "b"],
+    ["term_a", 18, 23, 0.5, "b"], ["term_a", 61, 23, 0.5, "b"], ["light_cyan", 18, 1, 0.5, "t"], ["light_cyan", 61, 1, 0.5, "t"],
+    ["light_amber", 40, 1, 0.5, "t"], ["light_red", 6, 1, 0.5, "t"], ["light_red", 73, 1, 0.5, "t"],
+]
+
+
+def clear_line(x0, y0, x1, y1, grid=None):
+    """True if no solid tile blocks the straight line (used for spawn safety)."""
+    n = int(math.hypot(x1 - x0, y1 - y0) // 20) + 1
+    for i in range(1, n):
+        t = i / n
+        if solid_px(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, grid):
+            return False
+    return True
+
+
+def solid(c, r, grid=None):
+    if c < 0 or c >= COLS or r < 0 or r >= ROWS:
+        return True
+    return (grid or GRID)[r][c] in SOLIDS
+
+
+def one_way(c, r, grid=None):
+    return 0 <= c < COLS and 0 <= r < ROWS and (grid or GRID)[r][c] in ONE_WAY
+
+
+def solid_px(x, y, grid=None):
+    return solid(int(x // TILE), int(y // TILE), grid)
+
+
+def spawn_xy(col, row):
+    return col * TILE + TILE / 2 - PW / 2, (row + 1) * TILE - PH - 0.01
+
+
+class MapDef:
+    """One playable map: grid, pickups, spawns, decoration, and the art/theme the client uses."""
+
+    def __init__(self, id, name, grid, pickups, spawns, backups, props, art, extra=None):
+        self.id, self.name, self.grid = id, name, grid
+        # weapons no longer spawn on the map: only medkits remain
+        self.pickups = [pk for pk in pickups if pk[0] == "health"]
+        self.spawns, self.backups = spawns, backups
+        self.props, self.art, self.extra = props, art, extra or {}
+
+
+import street_map as _SM  # noqa: E402  (same TILE/COLS/ROWS as above)
+import stairs_map as _ST  # noqa: E402
+
+MAPS = {
+    "lab": MapDef("lab", "Laboratory", GRID, PICKUPS, SPAWNS, BACKUP_SPAWNS, PROPS, "lab"),
+    "street": MapDef("street", "Street", _SM.GRID, _SM.PICKUPS, _SM.SPAWNS, _SM.BACKUP_SPAWNS, _SM.PROPS, "street", {
+        "sky": _SM.SKY, "skyline": _SM.SKYLINE, "skyline_base": _SM.SKYLINE_BASE, "street_row": _SM.GT,
+        "beams": [[24 * TILE, 28 * TILE, _SM.GT * TILE, _SM.SEWER_FLOOR * TILE], [52 * TILE, 56 * TILE, _SM.GT * TILE, _SM.SEWER_FLOOR * TILE]],
+    }),
+    "stairs": MapDef("stairs", "Staircase", _ST.GRID, _ST.PICKUPS, _ST.SPAWNS, _ST.BACKUP_SPAWNS, [], "stairs", {
+        "sky": _ST.SKY, "autostep": True, "ladders": _ST.LADDERS, "rails": _ST.RAILS,
+    }),
+}
+DEFAULT_MAP = "lab"
+
+
+def world_payload(map_id=DEFAULT_MAP):
+    m = MAPS.get(map_id) or MAPS[DEFAULT_MAP]
+    out = {
+        "tile": TILE, "cols": COLS, "rows": ROWS, "grid": m.grid,
+        "pw": PW, "ph": PH, "target": TARGET_KILLS, "durations": list(DURATIONS),
+        "map": m.id, "art": m.art,
+        "pickups": [[k, c * TILE + TILE / 2, (r + 1) * TILE - 18] for k, c, r in m.pickups],
+        "props": m.props,
+        "weapons": {str(k): {"name": v["name"], "mag": v["mag"]} for k, v in WEAPONS.items()},
+    }
+    out.update(m.extra)
+    return out
+
+
+# ------------------------------------------------------------------ entities
+class Player:
+    def __init__(self, pid, name):
+        self.id = pid
+        self.name = name
+        self.x = self.y = 0.0
+        self.vx = self.vy = 0.0
+        self.mx = self.my = 0.0
+        self.aim = 0.0
+        self.fire = False
+        self.ground = False
+        self.thrust = False
+        self.hp = MAX_HP
+        self.dead = False
+        self.dead_t = 0.0
+        self.invuln = 0.0
+        self.primary = DEFAULT_PRIMARY   # chosen in the lobby, fixed for the whole match
+        self.wpn = DEFAULT_PRIMARY       # weapon in hand: the primary or the sidearm
+        self.ammo = WEAPONS[DEFAULT_PRIMARY]["mag"]    # rounds left in the magazine of the weapon in hand
+        self.mags = {DEFAULT_PRIMARY: self.ammo, SIDEARM: WEAPONS[SIDEARM]["mag"]}   # rounds in each carried weapon
+        self.reload_t = 0.0              # > 0 while reloading
+        self.cd = 0.0
+        self.fire_t = 0.0
+        self.kills = 0
+        self.deaths = 0
+
+    @property
+    def cx(self):
+        return self.x + PW / 2
+
+    @property
+    def cy(self):
+        return self.y + PH / 2
+
+
+class Projectile:
+    __slots__ = ("x", "y", "vx", "vy", "owner", "wpn", "type", "dmg", "life", "age", "ang")
+
+    def __init__(self, x, y, ang, speed, owner, wpn, ptype, dmg, life):
+        self.x, self.y, self.ang = x, y, ang
+        self.vx, self.vy = math.cos(ang) * speed, math.sin(ang) * speed
+        self.owner, self.wpn, self.type, self.dmg, self.life = owner, wpn, ptype, dmg, life
+        self.age = 0.0
+
+
+# ------------------------------------------------------------------ the game
+class Game:
+    def __init__(self, map_id=DEFAULT_MAP):
+        self.players = {}
+        self.projs = []
+        self.events = []
+        self.phase = "play"     # "count" (3-2-1), "play", "final" (winning kill, finisher playing) or "over"
+        self.winner = -1
+        self.final_t = 0.0
+        # match timer (server-owned; clients only display it). Armed by restart(), so a bare Game() has no clock.
+        self.timed = False
+        self.duration = DEFAULT_DURATION
+        self.time_left = float(DEFAULT_DURATION)
+        self.count_t = 0.0
+        self.sudden = False     # time ran out with the lead tied: next kill by a tied player wins
+        self.sd_ids = []        # the tied players
+        self.reason = ""        # why the match ended: "kills", "time" or "sudden"
+        self.set_map(map_id)
+        self.clock = 0.0
+        self.spawn_used = {}    # spawn point -> time it was last used
+
+    def set_map(self, map_id):
+        self.map = MAPS.get(map_id) or MAPS[DEFAULT_MAP]
+        self.grid = self.map.grid
+        self.pk_up = [True] * len(self.map.pickups)
+        self.pk_t = [0.0] * len(self.map.pickups)
+
+    # ---- membership / input
+    def add_player(self, pid, name):
+        p = Player(pid, name)
+        self.players[pid] = p
+        self._respawn(p, first=True)
+        return p
+
+    def remove_player(self, pid):
+        self.players.pop(pid, None)
+
+    def set_input(self, pid, mx, my, aim, fire):
+        p = self.players.get(pid)
+        if not p:
+            return
+        p.mx = max(-1.0, min(1.0, float(mx)))
+        p.my = max(-1.0, min(1.0, float(my)))
+        a = float(aim)
+        p.aim = a if math.isfinite(a) else 0.0
+        p.fire = bool(fire)
+
+    # ---- match flow
+    def restart(self, map_id=None, duration=None):
+        if map_id in MAPS:
+            self.set_map(map_id)
+        if duration in DURATIONS:
+            self.duration = duration
+        self.timed = True
+        self.time_left = float(self.duration)
+        self.count_t = COUNTDOWN_S
+        self.sudden, self.sd_ids, self.reason = False, [], ""
+        self.phase, self.winner, self.final_t = "count", -1, 0.0
+        self.projs.clear()
+        self.pk_up = [True] * len(self.map.pickups)
+        self.pk_t = [0.0] * len(self.map.pickups)
+        spawns = self.map.spawns[:]
+        random.shuffle(spawns)
+        if len(self.players) > len(spawns):
+            extra = self.map.backups[:]
+            random.shuffle(extra)
+            spawns += extra
+        for i, p in enumerate(self.players.values()):
+            p.kills = 0
+            p.deaths = 0
+            self._respawn(p, first=True, spot=spawns[i % len(spawns)])
+
+    def _load_out(self, p):
+        """Full magazines, primary in hand."""
+        p.mags = {p.primary: WEAPONS[p.primary]["mag"], SIDEARM: WEAPONS[SIDEARM]["mag"]}
+        p.wpn, p.ammo, p.reload_t = p.primary, p.mags[p.primary], 0.0
+
+    def set_primary(self, pid, wid):
+        """Lobby choice. Ignored once a match is running (it only changes between matches)."""
+        p = self.players.get(pid)
+        if p and wid in PRIMARIES:
+            p.primary = wid
+            self._load_out(p)
+
+    def swap(self, pid):
+        p = self.players.get(pid)
+        if not p or p.dead or self.phase != "play":
+            return
+        p.mags[p.wpn] = p.ammo
+        p.wpn = SIDEARM if p.wpn != SIDEARM else p.primary
+        p.ammo = p.mags[p.wpn]
+        p.reload_t = 0.0                       # swapping cancels a reload
+        p.cd = max(p.cd, SWAP_CD)
+        self.events.append(["sw", p.id, p.wpn])
+
+    def reload(self, pid):
+        p = self.players.get(pid)
+        if p and not p.dead and self.phase == "play":
+            self._start_reload(p)
+
+    def _start_reload(self, p):
+        w = WEAPONS[p.wpn]
+        if p.reload_t > 0 or p.ammo >= w["mag"]:
+            return
+        p.reload_t = w["reload"]
+        self.events.append(["rl", p.id, p.wpn])
+
+    def _pick_spawn(self, p):
+        """Safest spawn: far from enemies, out of their sight, not just used. Backups only win if primaries are unsafe."""
+        others = [q for q in self.players.values() if q is not p and not q.dead]
+        best, best_s = self.map.spawns[0], -1e18
+        for backup, pool in ((False, self.map.spawns), (True, self.map.backups)):
+            for col, row in pool:
+                x, y = spawn_xy(col, row)
+                cx, cy = x + PW / 2, y + PH / 2
+                s = min(1500.0, min((math.hypot(cx - q.cx, cy - q.cy) for q in others), default=1500.0))
+                for q in others:                                    # an enemy that can see this spot
+                    if math.hypot(cx - q.cx, cy - q.cy) < 1100 and clear_line(cx, cy, q.cx, q.cy, self.grid):
+                        s -= 700
+                if self.clock - self.spawn_used.get((col, row), -99.0) < 6.0:   # used a moment ago
+                    s -= 800
+                if backup:
+                    s -= 250
+                s += random.random() * 80
+                if s > best_s:
+                    best, best_s = (col, row), s
+        return best
+
+    def _respawn(self, p, first=False, spot=None):
+        if spot is None:
+            spot = self._pick_spawn(p)
+        self.spawn_used[spot] = self.clock
+        p.x, p.y = spawn_xy(*spot)
+        p.vx = p.vy = 0.0
+        p.hp, p.dead, p.dead_t = MAX_HP, False, 0.0
+        self._load_out(p)
+        p.cd = 0.0
+        p.invuln = 0.0 if first else INVULN_S
+        p.ground = False
+
+    # ---- simulation
+    def step(self, dt):
+        self.clock += dt
+        if self.phase == "count":
+            self.count_t -= dt
+            if self.count_t <= 0:
+                self.count_t, self.phase = 0.0, "play"
+        elif self.phase == "play" and self.timed:
+            self._tick_timer(dt)
+        if self.phase == "final":
+            self.final_t -= dt
+            if self.final_t <= 0:
+                self.phase = "over"
+        for p in self.players.values():
+            self._update_player(p, dt)
+        self._update_pickups(dt)
+        self._update_projectiles(dt)
+        return self._snapshot()
+
+    def _tick_timer(self, dt):
+        if self.sudden:
+            # tied players may leave: keep the list honest so the match can never hang
+            self.sd_ids = [i for i in self.sd_ids if i in self.players]
+            if len(self.sd_ids) == 1:
+                self._finish(self.sd_ids[0], "sudden")
+            elif not self.sd_ids:
+                self._finish(self._leader(), "time")
+            return
+        self.time_left -= dt
+        if self.time_left > 0:
+            return
+        self.time_left = 0.0
+        if not self.players:
+            return
+        top = max(p.kills for p in self.players.values())
+        tied = [p.id for p in self.players.values() if p.kills == top]
+        if len(tied) == 1:
+            self._finish(tied[0], "time")
+        else:
+            self.sudden, self.sd_ids = True, tied
+
+    def _leader(self):
+        if not self.players:
+            return -1
+        return max(self.players.values(), key=lambda p: (p.kills, -p.deaths)).id
+
+    def _finish(self, winner, reason):
+        """End the match without a finishing kill (time ran out / sudden-death leaver): straight to results."""
+        self.winner, self.reason, self.phase, self.final_t = winner, reason, "over", 0.0
+        self.projs.clear()
+
+    def _update_player(self, p, dt):
+        p.cd = max(0.0, p.cd - dt)
+        p.fire_t = max(0.0, p.fire_t - dt)
+        if p.reload_t > 0 and not p.dead:
+            p.reload_t -= dt
+            if p.reload_t <= 0:
+                p.reload_t = 0.0
+                p.ammo = WEAPONS[p.wpn]["mag"]
+        p.invuln = max(0.0, p.invuln - dt)
+        if p.dead:
+            p.dead_t -= dt
+            if p.dead_t <= 0 and self.phase == "play":
+                self._respawn(p)
+        self._physics(p, dt)
+        if not p.dead and self.phase == "play" and p.fire and p.cd <= 0 and p.reload_t <= 0:
+            if p.ammo <= 0:
+                self._start_reload(p)          # trigger on an empty magazine reloads
+            else:
+                self._shoot(p)
+
+    def _physics(self, p, dt):
+        alive = not p.dead
+        frozen = self.phase == "count"          # 3-2-1: nobody moves until "GO"
+        mx = p.mx if alive and not frozen else 0.0
+        my = p.my if alive and not frozen else 0.0
+        p.thrust = alive and my < -0.35
+
+        if abs(mx) > 0.12:
+            acc = ACC_GROUND if p.ground else ACC_AIR
+            step = acc * dt
+            p.vx += max(-step, min(step, mx * SPEED - p.vx))
+        else:
+            s = (FRIC_GROUND if p.ground else FRIC_AIR) * dt
+            p.vx = 0.0 if abs(p.vx) <= s else p.vx - math.copysign(s, p.vx)
+
+        p.vy += (GRAVITY - THRUST if p.thrust else GRAVITY) * dt
+        if alive and my > 0.6 and not p.ground:
+            p.vy += 800 * dt
+        p.vy = max(-MAX_UP, min(MAX_FALL, p.vy))
+
+        prev_bottom = p.y + PH
+        was_ground = p.ground
+        p.ground = False
+        self._move_x(p, p.vx * dt, was_ground)
+        self._move_y(p, p.vy * dt, prev_bottom)
+
+    def _try_step(self, p, c, was_ground):
+        """Stairs maps only: walking into a one-tile step climbs it (the wall at column c must be just the feet tile)."""
+        if not (was_ground and self.map.extra.get("autostep")):
+            return False
+        top, bot = int(p.y // TILE), int((p.y + PH - 0.01) // TILE)
+        if any(solid(c, r, self.grid) for r in range(top, bot)):
+            return False
+        new_y = bot * TILE - PH
+        r0 = int(new_y // TILE)
+        for cc in range(int(p.x // TILE), int((p.x + PW - 0.01) // TILE) + 1):
+            if any(solid(cc, r, self.grid) for r in range(r0, bot)):
+                return False
+        p.y = new_y
+        return True
+
+    def _move_x(self, p, dx, was_ground=False):
+        p.x += dx
+        top, bot = int(p.y // TILE), int((p.y + PH - 0.01) // TILE)
+        if dx > 0:
+            c = int((p.x + PW - 0.01) // TILE)
+            for r in range(top, bot + 1):
+                if solid(c, r, self.grid):
+                    if not self._try_step(p, c, was_ground):
+                        p.x, p.vx = c * TILE - PW, 0.0
+                    break
+        elif dx < 0:
+            c = int(p.x // TILE)
+            for r in range(top, bot + 1):
+                if solid(c, r, self.grid):
+                    if not self._try_step(p, c, was_ground):
+                        p.x, p.vx = (c + 1) * TILE, 0.0
+                    break
+
+    def _move_y(self, p, dy, prev_bottom):
+        p.y += dy
+        c0, c1 = int(p.x // TILE), int((p.x + PW - 0.01) // TILE)
+        if dy >= 0:
+            r = int((p.y + PH - 0.01) // TILE)
+            for c in range(c0, c1 + 1):
+                if solid(c, r, self.grid) or (one_way(c, r, self.grid) and prev_bottom <= r * TILE + 1):
+                    p.y, p.vy, p.ground = r * TILE - PH, 0.0, True
+                    break
+        else:
+            r = int(p.y // TILE)
+            for c in range(c0, c1 + 1):
+                if solid(c, r, self.grid):
+                    p.y, p.vy = (r + 1) * TILE, 0.0
+                    break
+
+    # ---- weapons
+    def _shoot(self, p):
+        w = WEAPONS[p.wpn]
+        ox, oy = p.cx, p.y + SHOULDER_DY
+        mx, my = ox + math.cos(p.aim) * MUZZLE_LEN, oy + math.sin(p.aim) * MUZZLE_LEN
+        if solid_px(mx, my, self.grid):
+            mx, my = ox, oy
+        for _ in range(w["pellets"]):
+            ang = p.aim + random.uniform(-w["spread"], w["spread"])
+            spd = w["speed"] * (random.uniform(0.92, 1.08) if w["pellets"] > 1 else 1.0)
+            self.projs.append(Projectile(mx, my, ang, spd, p.id, p.wpn, w["type"], w["dmg"], w["life"]))
+        self.events.append(["sh", p.id, round(mx), round(my), round(p.aim, 2), p.wpn])
+        p.cd = w["cd"]
+        p.fire_t = 0.15
+        p.ammo -= 1
+        if p.ammo <= 0:
+            self._start_reload(p)              # magazine empty: reload automatically
+
+    def _update_projectiles(self, dt):
+        keep = []
+        for pr in self.projs:
+            pr.life -= dt
+            pr.age += dt
+            if pr.life <= 0:
+                if pr.type == 2:
+                    self._explode(pr.x, pr.y, pr.owner)
+                continue
+            dist = math.hypot(pr.vx, pr.vy) * dt
+            steps = max(1, int(dist // 10) + 1)
+            sx, sy = pr.vx * dt / steps, pr.vy * dt / steps
+            hit = None
+            for _ in range(steps):
+                pr.x += sx
+                pr.y += sy
+                if solid_px(pr.x, pr.y, self.grid):
+                    hit = "wall"
+                    break
+                for q in self.players.values():
+                    if q.dead or (q.id == pr.owner and pr.age < 0.15):
+                        continue
+                    if q.x <= pr.x <= q.x + PW and q.y <= pr.y <= q.y + PH:
+                        hit = q
+                        break
+                if hit:
+                    break
+            if hit is None:
+                keep.append(pr)
+                continue
+            if pr.type == 2:
+                self._explode(pr.x, pr.y, pr.owner)
+            elif hit == "wall":
+                self.events.append(["hit", round(pr.x), round(pr.y), round(pr.ang, 2)])
+            else:
+                self._damage(hit, pr.dmg, pr.owner, pr.wpn)
+                self.events.append(["bl", round(pr.x), round(pr.y)])
+        self.projs = keep
+
+    def _explode(self, x, y, owner):
+        self.events.append(["ex", round(x), round(y), ROCKET_RADIUS])
+        for q in self.players.values():
+            if q.dead:
+                continue
+            nx, ny = max(q.x, min(x, q.x + PW)), max(q.y, min(y, q.y + PH))
+            d = math.hypot(nx - x, ny - y)
+            if d >= ROCKET_RADIUS:
+                continue
+            f = 1.0 - d / ROCKET_RADIUS
+            dmg = max(8.0, ROCKET_DMG * f)
+            if q.id == owner:
+                dmg *= ROCKET_SELF
+            self._damage(q, dmg, owner, 2)
+            dx, dy = q.cx - x, q.cy - y
+            n = math.hypot(dx, dy) or 1.0
+            q.vx += dx / n * ROCKET_KNOCK * f
+            q.vy += dy / n * ROCKET_KNOCK * f - 140 * f
+
+    def _damage(self, victim, amount, attacker_id, wpn):
+        if victim.dead or victim.invuln > 0 or self.phase != "play":
+            return
+        killer = self.players.get(attacker_id)
+        victim.hp -= amount
+        if victim.hp > 0:
+            return
+        victim.hp = 0
+        victim.dead, victim.dead_t = True, RESPAWN_S
+        victim.fire = False
+        victim.deaths += 1
+        if killer and killer is not victim:
+            killer.kills += 1
+        self.events.append(["k", attacker_id, victim.id, wpn])
+        if killer and killer is not victim:
+            if self.sudden:
+                if killer.id in self.sd_ids:       # sudden death: first kill by a tied player wins
+                    self.phase, self.winner, self.final_t, self.reason = "final", killer.id, FINAL_S, "sudden"
+            elif killer.kills >= TARGET_KILLS:
+                self.phase, self.winner, self.final_t, self.reason = "final", killer.id, FINAL_S, "kills"
+
+    def _update_pickups(self, dt):
+        for i, (kind, c, r) in enumerate(self.map.pickups):
+            if not self.pk_up[i]:
+                self.pk_t[i] -= dt
+                if self.pk_t[i] <= 0:
+                    self.pk_up[i] = True
+                continue
+            px, py = c * TILE + TILE / 2, (r + 1) * TILE - 18
+            for p in self.players.values():
+                if p.dead or abs(p.cx - px) > PW / 2 + 20 or abs(p.cy - py) > PH / 2 + 20:
+                    continue
+                if p.hp >= MAX_HP:
+                    continue
+                p.hp = min(MAX_HP, p.hp + 40)
+                self.pk_up[i] = False
+                self.pk_t[i] = PICKUP_RESPAWN[kind]
+                self.events.append(["pu", i, p.id])
+                break
+
+    # ---- output
+    def _snapshot(self):
+        players = []
+        for p in self.players.values():
+            flags = (1 if p.ground else 0) | (2 if p.thrust else 0) | (4 if p.dead else 0) \
+                | (8 if p.fire_t > 0 else 0) | (16 if p.invuln > 0 else 0) | (32 if p.reload_t > 0 else 0)
+            players.append([p.id, round(p.x, 1), round(p.y, 1), round(p.vx), round(p.vy), round(p.aim, 2),
+                            int(math.ceil(p.hp)), p.wpn, flags, p.kills, p.ammo, round(max(0.0, p.dead_t), 1), p.deaths])
+        snap = {
+            "p": players,
+            "b": [[pr.type, round(pr.x), round(pr.y), round(pr.ang, 2)] for pr in self.projs],
+            "k": [1 if u else 0 for u in self.pk_up],
+            "e": self.events,
+            # [phase, winner, seconds left (or countdown seconds), sudden death?, tied ids, why it ended]
+            "m": [self.phase, self.winner, round(self.count_t if self.phase == "count" else self.time_left, 1),
+                  1 if self.sudden else 0, self.sd_ids, self.reason],
+        }
+        self.events = []
+        return snap
