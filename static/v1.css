@@ -1,0 +1,88 @@
+/* Link Strike v1.0 look: charcoal, steel and orange (loaded after style.css) */
+:root {
+  --night: #141516; --dusk: #1d1f21; --dusk-hi: #3b4046; --flare: #ff7a1a; --bone: #f2efe8; --muted: #a2a9b0;
+  --danger: #e0453f; --display: "Bungee", "Impact", sans-serif; --steel: #2a2d31; --amber: #ffb23a;
+}
+html, body { background: linear-gradient(#121314 55%, #25180f 100%) fixed; }
+#home {
+  --blue: #ff7a1a; --cyan: #ff9a3c; --ink: #0e0f10;
+  background:
+    radial-gradient(120% 55% at 0% 0%, rgba(255, 122, 26, .16), transparent 60%),
+    radial-gradient(90% 45% at 100% 100%, rgba(255, 90, 20, .20), transparent 60%),
+    linear-gradient(#0e0f10 0%, #161819 55%, #1f130b 100%);
+}
+.cut { --bg: linear-gradient(135deg, #ffb23a, #c8520a); }
+.glow { filter: drop-shadow(0 0 8px var(--g, rgba(255, 122, 26, .38))); }
+.glow.blue { --g: rgba(255, 122, 26, .32); }
+.frame .in { background: linear-gradient(180deg, rgba(30, 32, 34, .97), rgba(18, 19, 20, .97)); }
+.lbl, .jt { color: var(--amber); }
+.field { border-color: #4a4f55; background: var(--ink); color: var(--amber); }
+.field:focus-within { border-color: var(--flare); box-shadow: 0 0 0 2px rgba(255, 122, 26, .28); }
+.fe { color: #8d949b; }
+#home input::placeholder { color: #6f757b; }
+.mbtn.orange { --bg: linear-gradient(180deg, #ffd27a, #ff7a1a 50%, #ffa23a); }
+.mbtn.orange .in { background: linear-gradient(180deg, #ff9b2e, #e2620a); color: #1a0d02; }
+.mbtn.blue { --bg: linear-gradient(180deg, #7a8088, #3a3f45); }
+.mbtn.blue .in { background: linear-gradient(180deg, #2c2f33, #1c1e20); color: #fff; }
+.mbtn.blue .sep { background: rgba(255, 178, 58, .35); }
+.jbtn { --bg: linear-gradient(180deg, #ffd27a, #ff7a1a); }
+.jbtn .in { background: linear-gradient(180deg, #ff9b2e, #e2620a); color: #1a0d02; }
+.lb-trophy { color: var(--amber); filter: drop-shadow(0 0 6px rgba(255, 150, 40, .6)); }
+.lb-title small, .lb-empty { color: #8d949b; }
+.lb-row .rk { color: #c3c8cd; }
+.lb-sheet { background: rgba(6, 6, 7, .84); }
+.cap { color: #ffb23a; }
+.chip { --bg: linear-gradient(135deg, #ffb23a, #c8520a); }
+.chip .in { background: rgba(14, 15, 16, .94); color: var(--amber); }
+.hero { max-width: 100%; width: 100%; margin: 0 0 -6px; filter: drop-shadow(0 6px 18px rgba(0, 0, 0, .55)); }
+
+/* buttons, cards */
+.card { background: var(--dusk); border: 2px solid var(--dusk-hi); border-radius: 6px; }
+.btn.primary { background: linear-gradient(180deg, #ff9b2e, #e2620a); color: #1a0d02; text-transform: uppercase; letter-spacing: .06em; font-weight: 700; }
+.btn.ghost { border-color: #4a4f55; }
+input { border-color: #4a4f55; background: #0e0f10; }
+h2 { letter-spacing: .04em; text-transform: uppercase; color: var(--amber); }
+
+/* lobby */
+#playerList li { background: #101112; border: 1px solid #2f3337; border-left: 3px solid var(--flare); }
+.avatar { width: 34px; height: 34px; border-radius: 4px; border: 2px solid #555; object-fit: cover; flex: none; background: #222; }
+#board .avatar, #overBoard .avatar { border-width: 1px; border-radius: 3px; }
+.mode { display: flex !important; align-items: center; gap: 12px; padding: 8px !important; background: #101112 !important; border-color: #343a40 !important; border-radius: 6px !important; }
+.mode img { width: 92px; height: 56px; object-fit: cover; border-radius: 4px; flex: none; border: 1px solid #444; }
+.mode span { display: grid; gap: 2px; min-width: 0; }
+.mode.on { border-color: var(--flare) !important; box-shadow: 0 0 0 2px rgba(255, 122, 26, .3), 0 0 14px rgba(255, 122, 26, .25) !important; }
+.mode.on b { color: var(--amber); }
+
+/* in-game HUD */
+.hud-left { width: 206px; }
+.hud-id { display: flex; gap: 8px; align-items: stretch; padding: 5px; background: linear-gradient(180deg, rgba(34, 36, 38, .88), rgba(16, 17, 18, .88)); border: 2px solid #ff7a1a; border-radius: 6px; clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px); }
+.hud-id .face { width: 50px; height: 50px; border-radius: 4px; border: 2px solid #ffb23a; object-fit: cover; flex: none; background: #1a1a1a; }
+.hud-bars { flex: 1; min-width: 0; display: grid; gap: 4px; align-content: center; }
+.hp { height: 18px; border: 1px solid #5b5f64; border-radius: 3px; background: rgba(8, 8, 9, .85); }
+#hpFill { background-image: linear-gradient(180deg, rgba(255, 255, 255, .22), rgba(0, 0, 0, .15)); }
+.wpn { display: flex; align-items: center; gap: 6px; min-height: 22px; }
+.wpn img { height: 20px; max-width: 60px; object-fit: contain; filter: drop-shadow(0 1px 1px #000); }
+#wpnText { margin: 0; font: 700 15px var(--ui); color: var(--amber); text-transform: uppercase; letter-spacing: .04em; }
+.hud-btn { background: rgba(24, 26, 28, .85); border: 1px solid #4a4f55; border-radius: 4px; text-transform: uppercase; font-size: 13px; letter-spacing: .05em; }
+#hudRoom { color: var(--amber); }
+#board { background: rgba(16, 17, 18, .78); border: 1px solid #3b4046; border-left: 3px solid #ff7a1a; border-radius: 4px; }
+#board li.me .nm { color: var(--amber); }
+#feed div { background: rgba(16, 17, 18, .8); border-right: 3px solid #ff7a1a; border-radius: 3px; }
+.banner { color: #fff; text-shadow: 0 0 14px rgba(255, 122, 26, .8), 0 2px 6px #000; }
+.over { background: rgba(8, 8, 9, .82); }
+#overBoard li { background: #101112; border-left: 3px solid #ff7a1a; border-radius: 4px; }
+#overTitle { color: var(--amber); text-transform: uppercase; }
+
+/* touch controls */
+.pad { border-color: rgba(255, 178, 58, .45); background: rgba(14, 15, 16, .45); }
+.pad.on { border-color: rgba(255, 178, 58, .95); }
+.knob { background: rgba(242, 239, 232, .8); box-shadow: 0 0 0 3px rgba(255, 122, 26, .5); }
+#game { background: #0b0c0d; }
+.conn, .toast { border-radius: 4px; }
+#home .join-row input, #home .join-row input:focus { border: 2px solid #4a4f55; border-radius: 8px; background: var(--ink); }
+#home .join-row input:focus { border-color: var(--flare); }
+.linkbtn { color: var(--amber) !important; }
+.ver, .ver span, footer.ver { color: #8d949b !important; }
+.ver::before, .ver::after, footer.ver::before, footer.ver::after { background: #ff7a1a !important; opacity: .5; }
+.hud-left { width: 190px; }
+.hud-id .face { width: 44px; height: 44px; }
