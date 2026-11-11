@@ -1,0 +1,72 @@
+[
+ {
+  "id": "mp5_red",
+  "weapon": "mp5",
+  "name": "Crimson",
+  "tier": "common",
+  "price": 150
+ },
+ {
+  "id": "mp5_gold",
+  "weapon": "mp5",
+  "name": "Royal Gold",
+  "tier": "rare",
+  "price": 500
+ },
+ {
+  "id": "ak47_flame",
+  "weapon": "ak47",
+  "name": "Dragon Flame",
+  "tier": "common",
+  "price": 150
+ },
+ {
+  "id": "ak47_lightning",
+  "weapon": "ak47",
+  "name": "Blue Lightning",
+  "tier": "rare",
+  "price": 500
+ },
+ {
+  "id": "mac10_skull",
+  "weapon": "mac10",
+  "name": "Skull",
+  "tier": "common",
+  "price": 150
+ },
+ {
+  "id": "mac10_purple",
+  "weapon": "mac10",
+  "name": "Purple Crown",
+  "tier": "rare",
+  "price": 500
+ },
+ {
+  "id": "ump45_toxic",
+  "weapon": "ump45",
+  "name": "Toxic",
+  "tier": "common",
+  "price": 150
+ },
+ {
+  "id": "ump45_frost",
+  "weapon": "ump45",
+  "name": "Frost",
+  "tier": "rare",
+  "price": 500
+ },
+ {
+  "id": "p90_inferno",
+  "weapon": "p90",
+  "name": "Inferno",
+  "tier": "common",
+  "price": 150
+ },
+ {
+  "id": "p90_dragon",
+  "weapon": "p90",
+  "name": "Gold Dragon",
+  "tier": "rare",
+  "price": 500
+ }
+]
