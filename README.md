@@ -29,6 +29,8 @@ The `players` table is created automatically. No DATABASE_URL (or Neon unreachab
 ## Tests (game rules, no extra packages)
     python tests/test_game.py
     python tests/test_street.py
+    python tests/test_store.py
+    python tests/test_store_flow.py
 
 ## Deploy on Render
 1. Push this folder to GitHub.
@@ -42,6 +44,8 @@ Set MIN_TO_START=2 in Render env vars once you're done solo testing.
 - street_map.py  the Street map (see Maps above)
 - app.py       Flask-SocketIO rooms, lobby, game loop, /api/leaderboard
 - rankings.py  leaderboard rules + Neon (Postgres) access with offline fallback
+- store.py     Link Coins + weapon skins: earning, daily cap, buy, equip (Postgres, server-side only)
+- skins.json   the skin list: id, weapon, name, tier, price (art in static/img/wpn/skins/)
 - static/      game.js (client), style.css, skins.js + img/ (soldier atlases built from your Craftpix packs)
 
 ## Maps (host picks in the lobby)
@@ -77,6 +81,17 @@ server memory and last until the next restart. Code: `roomnames.py`.
 - A blank name is filled in automatically: `Soldier`, `Soldier 2`, `Soldier 3`...
 - One device = one player per room. If the same device joins a room it's already in (second tab, refresh, reconnect), it takes over its existing seat instead of creating a second player: same name, kills, and the old window is disconnected. This works even when the room is full.
 - Limit: a device is identified by an id saved in the browser, so someone who clears their site data or uses a private window looks like a new device (they still can't reuse a taken name). Code: `unique_name`, `seat_of` and `take_over_seat` in `app.py`.
+
+## Store (Link Coins and weapon skins)
+- Players earn **5 Link Coins per kill**, up to **100 a day** (the day changes at midnight Nigeria time). Coins are paid when the
+  match ends, or when you leave mid-match (so kills are never lost). Nothing else earns coins.
+- Skins change looks only. **Common = 150 coins, rare = 500.** Buying a skin puts it on; the Store lets you swap or take it off.
+  Everybody in the room sees the skin in your hands.
+- Coins, owned and equipped skins are saved in Postgres by device id (tables `wallets`, `skins_owned`, `skins_equipped`, created
+  automatically, same `DATABASE_URL` as the leaderboard). **No DATABASE_URL = the Store shows "offline"**. Clearing browser data
+  loses coins (no accounts; a recovery code can be added later).
+- To add a skin: draw it, save `<id>.png` (menu icon, 360 px wide) and `hand_<id>.png` (in-hand, 220 px wide) in
+  `static/img/wpn/skins/`, then add a line to `skins.json`. Coin amounts and the cap are at the top of `store.py`.
 
 ## ALCATRAZ (nightly room)
 - **ALCATRAZ** opens every day at **8pm Nigeria time** (19:00 UTC, no daylight saving). The first person in becomes host. It stays open

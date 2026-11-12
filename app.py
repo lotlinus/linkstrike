@@ -20,6 +20,7 @@ import alcatraz
 import game as G
 import rankings
 import roomnames
+import store
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-only-change-me")
@@ -138,7 +139,7 @@ def add_player(room, sid, name, device=None, skin=None):
     used = {m["id"] for m in room.members.values()}
     slot = next(i for i in range(MAX_PLAYERS) if i not in used)
     m = {"id": slot, "name": clean_name(name), "device": rankings.clean_device(device), "skin": pick_skin(room, skin, slot),
-         "weapon": G.DEFAULT_PRIMARY}
+         "weapon": G.DEFAULT_PRIMARY, "paid_kills": 0, "wskin": {}}
     room.members[sid] = m
     room.game.add_player(slot, m["name"])
     if room.host is None:
@@ -163,7 +164,7 @@ def lobby_payload(room):
         "weapons": G.weapon_table(),
         "players": sorted(
             ({"id": m["id"], "name": m["name"], "skin": m.get("skin", m["id"] % SKIN_COUNT),
-              "weapon": m.get("weapon", G.DEFAULT_PRIMARY)} for m in room.members.values()),
+              "weapon": m.get("weapon", G.DEFAULT_PRIMARY), "ws": m.get("wskin", {})} for m in room.members.values()),
             key=lambda m: m["id"],
         ),
         # players who tapped "Play again": the rematch starts once every player has
@@ -181,7 +182,12 @@ def remove_player(sid, check=True):
     room = rooms.get(code)
     if not room or sid not in room.members:
         return
-    room.game.remove_player(room.members[sid]["id"])
+    m = room.members[sid]
+    gone = room.game.players.get(m["id"])
+    owed = (gone.kills - m.get("paid_kills", 0)) if gone else 0
+    if owed > 0 and m.get("device"):
+        socketio.start_background_task(pay_coins, [(sid, m["device"], owed)])
+    room.game.remove_player(m["id"])
     del room.members[sid]
     room.again.discard(sid)
     leave_room(code, sid=sid)
@@ -209,6 +215,46 @@ def save_result(room):
     results = rankings.build_results(entries, g.winner)
     if results:
         socketio.start_background_task(rankings.record_match, results)
+    pays = []
+    for sid, m in room.members.items():
+        p = g.players.get(m["id"])
+        if p and m.get("device") and p.kills > m.get("paid_kills", 0):
+            pays.append((sid, m["device"], p.kills - m.get("paid_kills", 0)))
+            m["paid_kills"] = p.kills
+    if pays:
+        socketio.start_background_task(pay_coins, pays)
+
+
+# ---------------------------------------------------------------- Link Coins
+def pay_coins(pays):
+    """pays: [(sid, device, kills)]. Adds the coins and tells each player what they got."""
+    for sid, device, kills in pays:
+        r = store.award(device, kills)
+        if r:
+            socketio.emit("coins", r, to=sid)
+
+
+def load_equipped(room, sid):
+    """Fetch this player's equipped weapon skins from the database, then tell the room."""
+    m = room.members.get(sid)
+    if not m or not m.get("device") or not store.enabled():
+        return
+    eq = store.equipped(m["device"])
+    if sid in room.members and eq != m.get("wskin"):
+        m["wskin"] = eq
+        broadcast_lobby(room)
+
+
+def apply_equipped(device, eq):
+    """A player changed their skins in the Store: update every room they are sitting in."""
+    for room in list(rooms.values()):
+        changed = False
+        for m in room.members.values():
+            if m.get("device") == device:
+                m["wskin"] = eq
+                changed = True
+        if changed:
+            broadcast_lobby(room)
 
 
 # ---------------------------------------------------------------- game loop
@@ -255,6 +301,40 @@ def api_leaderboard():
     resp = jsonify(rankings.leaderboard(limit, device))
     resp.headers["Cache-Control"] = "no-store"
     return resp
+
+
+@app.route("/api/store")
+def api_store():
+    resp = jsonify(store.view(rankings.clean_device(request.args.get("device"))))
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+def store_action(fn):
+    data = request.get_json(silent=True) if (request.content_length or 0) < 1024 else None
+    data = data if isinstance(data, dict) else {}
+    device = rankings.clean_device(data.get("device"))
+    if not device:
+        return jsonify({"ok": False, "error": "unavailable"}), 400
+    result = fn(device, data)
+    if result["ok"] and result["state"]:
+        apply_equipped(device, result["state"]["equipped"])
+    resp = jsonify(result)
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+@app.route("/api/store/buy", methods=["POST"])
+def api_store_buy():
+    return store_action(lambda device, d: store.buy(device, d.get("skin")))
+
+
+@app.route("/api/store/equip", methods=["POST"])
+def api_store_equip():
+    def go(device, d):
+        wid = d.get("weapon")
+        return store.equip(device, d.get("skin"), wid if isinstance(wid, int) and not isinstance(wid, bool) else None)
+    return store_action(go)
 
 
 @app.route("/api/alcatraz")
@@ -324,6 +404,7 @@ def enter_room(room, sid, name, device=None, skin=None):
         remove_player(sid)  # in case they were in another room
         m = add_player(room, sid, final, device, skin)
     emit("joined", {"code": room.code, "you": m["id"]})
+    socketio.start_background_task(load_equipped, room, sid)
     if room.state == "playing":
         emit("start", {"world": G.world_payload(room.map)})
     broadcast_lobby(room)
@@ -396,6 +477,8 @@ def on_start():
         return
     room.state = "playing"
     room.recorded = False
+    for m in room.members.values():
+        m["paid_kills"] = 0
     room.game.restart(room.map, room.duration)
     socketio.emit("start", {"world": G.world_payload(room.map)}, to=room.code)
     broadcast_lobby(room)
@@ -491,6 +574,8 @@ def maybe_rematch(room, force=False):
     room.again.clear()
     room.again_at = None
     room.recorded = False
+    for m in room.members.values():
+        m["paid_kills"] = 0
     room.game.restart(room.map, room.duration)
     broadcast_lobby(room)
     return True

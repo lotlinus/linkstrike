@@ -89,6 +89,12 @@ function start() {
     return p && Number.isInteger(p.skin) ? p.skin % SKIN_N : id % SKIN_N;
   };
   const colorOf = (id) => COLORS[skinOf(id) % COLORS.length];
+  // the weapon skin a player has on for weapon wid (null = the standard look)
+  const wskinOf = (id, wid) => {
+    const p = lobby && lobby.players.find((q) => q.id === id);
+    return (p && p.ws && p.ws[String(wid)]) || null;
+  };
+  const wIconSrc = (wid, id) => { const k = wskinOf(id, wid); return k ? "/static/img/wpn/skins/" + k + ".png?v=1" : "/static/img/wpn/" + (W_ICON[wid] || "glock") + ".png?v=1"; };
   const AVATARS = window.AVATARS || [];
   function mySkin() {            // saved choice from the Avatar screen; null lets the server give the first free one
     try { const v = parseInt(localStorage.getItem("ls_skin"), 10); if (v >= 0 && v < SKIN_N) return v; } catch (e) {}
@@ -276,7 +282,65 @@ function start() {
     }
   }
   heroEl.onclick = () => { renderAvatars(); syncMenuFace(); $("avSheet").hidden = false; };   // the soldier is the avatar button
-  $("storeBtn").onclick = () => { $("storeSheet").hidden = false; };
+  // ------------------------------------------------------------ store (Link Coins -> weapon skins)
+  let storeData = null;
+  const SKIN_DIR = "/static/img/wpn/skins/";
+  async function storeCall(path, body) {
+    const res = await fetch(path, { method: body ? "POST" : "GET", cache: "no-store",
+      headers: body ? { "Content-Type": "application/json" } : undefined, body: body ? JSON.stringify(Object.assign({ device: deviceId() }, body)) : undefined });
+    return res.json();
+  }
+  function renderStore() {
+    const d = storeData, list = $("storeList");
+    list.textContent = "";
+    $("storeBal").hidden = !(d && d.enabled);
+    if (!d || !d.enabled) { $("storeMsg").textContent = d ? "The store is offline right now. Try again later." : "Loading..."; $("storeMsg").hidden = false; return; }
+    $("storeMsg").hidden = true;
+    $("storeCoins").textContent = d.coins;
+    $("storeToday").textContent = d.today + " / " + d.cap;
+    const byW = new Map();
+    for (const k of d.skins) { if (!byW.has(k.wid)) byW.set(k.wid, []); byW.get(k.wid).push(k); }
+    for (const [wid, skins] of byW) {
+      const h = document.createElement("div"); h.className = "st-w"; h.textContent = skins[0].weapon.toUpperCase(); list.append(h);
+      for (const k of skins) {
+        const row = document.createElement("div"); row.className = "st-row" + (k.equipped ? " on" : "");
+        const im = document.createElement("img"); im.src = SKIN_DIR + k.id + ".png?v=1"; im.alt = ""; im.loading = "lazy";
+        const nm = document.createElement("span"); nm.className = "st-name";
+        const t = document.createElement("b"); t.textContent = k.name;
+        const tier = document.createElement("small"); tier.className = "st-tier " + k.tier; tier.textContent = k.tier;
+        nm.append(t, tier);
+        const btn = document.createElement("button"); btn.type = "button"; btn.className = "st-btn";
+        if (k.equipped) { btn.textContent = "Equipped"; btn.dataset.a = "off"; }
+        else if (k.owned) { btn.textContent = "Equip"; btn.dataset.a = "equip"; }
+        else { btn.textContent = k.price + " coins"; btn.dataset.a = "buy"; btn.classList.toggle("poor", d.coins < k.price); }
+        btn.onclick = () => storeAct(k, btn.dataset.a);
+        row.append(im, nm, btn); list.append(row);
+      }
+    }
+  }
+  function applyStoreState(st) {
+    if (!storeData || !st) return;
+    const own = new Set(st.owned), eq = new Set(Object.values(st.equipped));
+    storeData.coins = st.coins; storeData.today = st.today;
+    for (const k of storeData.skins) { k.owned = own.has(k.id); k.equipped = eq.has(k.id); }
+  }
+  async function storeAct(k, act) {
+    if (act === "off") { try { const r = await storeCall("/api/store/equip", { weapon: k.wid }); if (r.ok) { applyStoreState(r.state); renderStore(); } } catch (e) {} return; }
+    try {
+      const r = act === "buy" ? await storeCall("/api/store/buy", { skin: k.id }) : await storeCall("/api/store/equip", { skin: k.id });
+      if (r.state) applyStoreState(r.state);
+      if (!r.ok) toast(r.error === "coins" ? "Not enough Link Coins" : r.error === "owned" ? "You already own this skin" : "Couldn't do that. Try again.", true);
+      else if (act === "buy") toast(k.name + " is yours and equipped");
+      renderStore();
+    } catch (e) { toast("Couldn't reach the store", true); }
+  }
+  async function openStore() {
+    $("storeSheet").hidden = false;
+    renderStore();
+    try { storeData = await storeCall("/api/store?device=" + encodeURIComponent(deviceId())); } catch (e) { storeData = { enabled: false }; }
+    renderStore();
+  }
+  $("storeBtn").onclick = openStore;
   syncMenuFace();
   fitHero();
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSettings(); });
@@ -590,6 +654,11 @@ function start() {
     updateHud();
   });
 
+  socket.on("coins", (d) => {
+    if (storeData && storeData.enabled) { storeData.coins = d.coins; storeData.today = d.today; }
+    if (d.earned > 0) toast("+" + d.earned + " Link Coins" + (d.earned < d.wanted ? " (daily limit reached)" : ""));
+    else if (d.wanted > 0) toast("Daily Link Coin limit reached");
+  });
   socket.on("error_msg", (d) => {
     creating = false;
     toast(d.msg, true);
@@ -684,7 +753,7 @@ function start() {
       const w = world && world.weapons[String(mine[7])];
       $("wpnText").textContent = w ? w.name : "";
       $("wpnAmmo").textContent = w ? ((mine[8] & 32) ? "Reload" : mine[10] + " / " + w.mag) : "";
-      const wi = $("wpnIcon"), wsrc = "/static/img/wpn/" + (W_ICON[mine[7]] || "glock") + ".png?v=1";
+      const wi = $("wpnIcon"), wsrc = wIconSrc(mine[7], me);
       if (wi && wi.dataset.s !== wsrc) { wi.dataset.s = wsrc; wi.src = wsrc; }
       const pt = $("hudFace");
       const fsrc = "/static/img/avatars/a" + skinOf(me) + ".jpg?v=1";
@@ -1016,6 +1085,11 @@ function start() {
   const skinImgs = [];
   let explImg = null;
   const handImgs = [], flashImgs = [];
+  const skinHand = {};          // skin id -> in-hand sprite (false = loading or missing); loaded the first time someone wears it
+  function skinHandImg(k) {
+    if (!(k in skinHand)) { skinHand[k] = false; loadImg("/static/img/wpn/skins/hand_" + k + ".png?v=1").then((im) => { skinHand[k] = im || false; }); }
+    return skinHand[k] || null;
+  }
   for (let i = 0; i < W_HAND.length; i++) loadImg("/static/img/wpn/hand_" + W_HAND[i] + ".png?v=1").then((im) => { handImgs[i] = im; });
   for (let i = 0; i < 3; i++) loadImg("/static/img/wpn/flash_" + i + ".png?v=1").then((im) => { flashImgs[i] = im; });
   for (let i = 0; i < SKIN_N; i++) loadImg("/static/img/skin" + i + ".png?v=4").then((im) => { skinImgs[i] = im; });
@@ -1385,7 +1459,7 @@ function start() {
       ctx.translate(0, PIV - 127);
       ctx.rotate(am + TIP);
       ctx.drawImage(img, idx * 128, row * 128, 128, SPLIT, -64, -PIV, 128, SPLIT);
-      const hw = handImgs[p[7]], hd = HAND[p[7]];
+      const sk = wskinOf(id, p[7]), hw = (sk && skinHandImg(sk)) || handImgs[p[7]], hd = HAND[p[7]];
       if (hw && hd) { const gh = hw.height * hd.len / hw.width; ctx.drawImage(hw, hd.x, hd.y - gh * 0.4, hd.len, gh); }
       ctx.restore();
     }
@@ -1431,7 +1505,7 @@ function start() {
     const b = $("finalBanner"), who = $("finalWho"), ic = $("finalIcon");
     who.textContent = nameOf(lastKill.killer);
     who.style.color = colorOf(lastKill.killer);
-    ic.src = "/static/img/wpn/" + (W_ICON[lastKill.wpn] || "glock") + ".png?v=1";
+    ic.src = wIconSrc(lastKill.wpn, lastKill.killer);
     b.hidden = false;
     b.classList.remove("go"); void b.offsetWidth; b.classList.add("go");
   }
