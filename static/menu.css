@@ -568,19 +568,19 @@ body.lefty .wbtns { right: auto; left: calc(10px + env(safe-area-inset-left)); }
 /* store */
 .store-body { text-align: left; padding: 8px 0 4px; }
 .store-body .store-sub { text-align: center; color: #526F91; }
-.st-bal { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 14px; padding: 8px 12px; margin-bottom: 8px; border: 2px solid #526F91; background: #E8E9E9; color: #26394D; font: 700 15px "Chakra Petch", var(--ui); letter-spacing: .06em; text-transform: uppercase; }
-.st-bal b { font-size: 20px; }
-.st-bal small { font: 600 12px "Chakra Petch", var(--ui); color: #526F91; }
-.st-list { max-height: min(46vh, 300px); overflow-y: auto; -webkit-overflow-scrolling: touch; padding-right: 2px; }
-.st-w { margin: 10px 0 4px; font: 700 12px "Chakra Petch", var(--ui); letter-spacing: .18em; color: #526F91; }
-.st-row { display: flex; align-items: center; gap: 10px; padding: 6px 8px; margin-bottom: 6px; border: 2px solid #526F91; background: #fff; }
-.st-row.on { box-shadow: 0 0 0 2px #26394D inset; }
-.st-row img { width: 96px; height: 44px; object-fit: contain; flex: none; background: #26394D; padding: 2px 4px; }
-.st-name { flex: 1; min-width: 0; display: flex; flex-direction: column; color: #26394D; font: 700 15px "Chakra Petch", var(--ui); letter-spacing: .05em; text-transform: uppercase; }
-.st-tier { font: 700 11px "Chakra Petch", var(--ui); letter-spacing: .14em; color: #526F91; }
-.st-tier.rare { color: #b7791f; }
-.st-btn { flex: none; min-width: 96px; padding: 10px 10px; border: 2px solid #526F91; background: #526F91; color: #fff; font: 700 13px "Chakra Petch", var(--ui); letter-spacing: .08em; text-transform: uppercase; cursor: pointer; }
-.st-btn:active { filter: brightness(.88); }
-.st-btn[data-a="off"] { background: #E8E9E9; color: #26394D; cursor: default; }
-.st-btn[data-a="equip"] { background: #fff; color: #26394D; }
-.st-btn.poor { background: #8a9db3; border-color: #8a9db3; }
+.sk-bal { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 14px; padding: 8px 12px; margin-bottom: 8px; border: 2px solid #526F91; background: #E8E9E9; color: #26394D; font: 700 15px "Chakra Petch", var(--ui); letter-spacing: .06em; text-transform: uppercase; }
+.sk-bal b { font-size: 20px; }
+.sk-bal small { font: 600 12px "Chakra Petch", var(--ui); color: #526F91; }
+.sk-list { max-height: min(46vh, 300px); overflow-y: auto; -webkit-overflow-scrolling: touch; padding-right: 2px; }
+.sk-w { margin: 10px 0 4px; font: 700 12px "Chakra Petch", var(--ui); letter-spacing: .18em; color: #526F91; }
+.sk-row { display: flex; align-items: center; gap: 10px; padding: 6px 8px; margin-bottom: 6px; border: 2px solid #526F91; background: #fff; }
+.sk-row.on { box-shadow: 0 0 0 2px #26394D inset; }
+.sk-row img { width: 96px; height: 44px; object-fit: contain; flex: none; background: #26394D; padding: 2px 4px; }
+.sk-name { flex: 1; min-width: 0; display: flex; flex-direction: column; color: #26394D; font: 700 15px "Chakra Petch", var(--ui); letter-spacing: .05em; text-transform: uppercase; }
+.sk-tier { font: 700 11px "Chakra Petch", var(--ui); letter-spacing: .14em; color: #526F91; }
+.sk-tier.rare { color: #b7791f; }
+.sk-btn { flex: none; min-width: 96px; padding: 10px 10px; border: 2px solid #526F91; background: #526F91; color: #fff; font: 700 13px "Chakra Petch", var(--ui); letter-spacing: .08em; text-transform: uppercase; cursor: pointer; }
+.sk-btn:active { filter: brightness(.88); }
+.sk-btn[data-a="off"] { background: #E8E9E9; color: #26394D; cursor: default; }
+.sk-btn[data-a="equip"] { background: #fff; color: #26394D; }
+.sk-btn.poor { background: #8a9db3; border-color: #8a9db3; }

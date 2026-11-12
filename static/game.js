@@ -301,15 +301,15 @@ function start() {
     const byW = new Map();
     for (const k of d.skins) { if (!byW.has(k.wid)) byW.set(k.wid, []); byW.get(k.wid).push(k); }
     for (const [wid, skins] of byW) {
-      const h = document.createElement("div"); h.className = "st-w"; h.textContent = skins[0].weapon.toUpperCase(); list.append(h);
+      const h = document.createElement("div"); h.className = "sk-w"; h.textContent = skins[0].weapon.toUpperCase(); list.append(h);
       for (const k of skins) {
-        const row = document.createElement("div"); row.className = "st-row" + (k.equipped ? " on" : "");
+        const row = document.createElement("div"); row.className = "sk-row" + (k.equipped ? " on" : "");
         const im = document.createElement("img"); im.src = SKIN_DIR + k.id + ".png?v=1"; im.alt = ""; im.loading = "lazy";
-        const nm = document.createElement("span"); nm.className = "st-name";
+        const nm = document.createElement("span"); nm.className = "sk-name";
         const t = document.createElement("b"); t.textContent = k.name;
-        const tier = document.createElement("small"); tier.className = "st-tier " + k.tier; tier.textContent = k.tier;
+        const tier = document.createElement("small"); tier.className = "sk-tier " + k.tier; tier.textContent = k.tier;
         nm.append(t, tier);
-        const btn = document.createElement("button"); btn.type = "button"; btn.className = "st-btn";
+        const btn = document.createElement("button"); btn.type = "button"; btn.className = "sk-btn";
         if (k.equipped) { btn.textContent = "Equipped"; btn.dataset.a = "off"; }
         else if (k.owned) { btn.textContent = "Equip"; btn.dataset.a = "equip"; }
         else { btn.textContent = k.price + " coins"; btn.dataset.a = "buy"; btn.classList.toggle("poor", d.coins < k.price); }
