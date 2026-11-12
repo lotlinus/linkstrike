@@ -284,6 +284,10 @@ function start() {
   heroEl.onclick = () => { renderAvatars(); syncMenuFace(); $("avSheet").hidden = false; };   // the soldier is the avatar button
   // ------------------------------------------------------------ store (Link Coins -> weapon skins)
   let storeData = null;
+  function setCoinChip(n) {         // Link Coin balance on the home screen's Store tile
+    $("tileCoinsN").textContent = n;
+    $("tileCoins").hidden = false;
+  }
   const SKIN_DIR = "/static/img/wpn/skins/";
   async function storeCall(path, body) {
     const res = await fetch(path, { method: body ? "POST" : "GET", cache: "no-store",
@@ -321,7 +325,7 @@ function start() {
   function applyStoreState(st) {
     if (!storeData || !st) return;
     const own = new Set(st.owned), eq = new Set(Object.values(st.equipped));
-    storeData.coins = st.coins; storeData.today = st.today;
+    storeData.coins = st.coins; storeData.today = st.today; setCoinChip(st.coins);
     for (const k of storeData.skins) { k.owned = own.has(k.id); k.equipped = eq.has(k.id); }
   }
   async function storeAct(k, act) {
@@ -338,9 +342,12 @@ function start() {
     $("storeSheet").hidden = false;
     renderStore();
     try { storeData = await storeCall("/api/store?device=" + encodeURIComponent(deviceId())); } catch (e) { storeData = { enabled: false }; }
+    if (storeData.enabled) setCoinChip(storeData.coins);
     renderStore();
   }
   $("storeBtn").onclick = openStore;
+  // show the balance on the home screen without opening the Store
+  storeCall("/api/store?device=" + encodeURIComponent(deviceId())).then((d) => { if (d && d.enabled) { storeData = d; setCoinChip(d.coins); } }).catch(() => {});
   syncMenuFace();
   fitHero();
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSettings(); });
@@ -656,6 +663,7 @@ function start() {
 
   socket.on("coins", (d) => {
     if (storeData && storeData.enabled) { storeData.coins = d.coins; storeData.today = d.today; }
+    setCoinChip(d.coins);
     if (d.earned > 0) toast("+" + d.earned + " Link Coins" + (d.earned < d.wanted ? " (daily limit reached)" : ""));
     else if (d.wanted > 0) toast("Daily Link Coin limit reached");
   });

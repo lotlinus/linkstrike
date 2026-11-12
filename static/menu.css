@@ -584,3 +584,12 @@ body.lefty .wbtns { right: auto; left: calc(10px + env(safe-area-inset-left)); }
 .sk-btn[data-a="off"] { background: #E8E9E9; color: #26394D; cursor: default; }
 .sk-btn[data-a="equip"] { background: #fff; color: #26394D; }
 .sk-btn.poor { background: #8a9db3; border-color: #8a9db3; }
+
+/* Link Coin balance (home Store tile + Store header) */
+.coin-chip { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; flex: none; color: #26394D; text-shadow: none; }
+.coin-chip[hidden] { display: none; }
+.coin-chip img { width: 22px; height: 22px; display: block; }
+.coin-chip i { font: 700 15px "Chakra Petch", var(--ui); font-style: normal; letter-spacing: .04em; }
+.sk-coins { display: inline-flex; align-items: center; gap: 8px; }
+.coin-ic { width: 28px; height: 28px; display: block; }
+@media (max-width: 700px) { .coin-chip img { width: 18px; height: 18px; } .coin-chip i { font-size: 13px; } }
