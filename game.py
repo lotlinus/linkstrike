@@ -631,6 +631,8 @@ class Game:
             return
         killer = self.players.get(attacker_id)
         victim.hp -= amount
+        # client feedback only (damage numbers, hit markers): victim, attacker, amount, x, y, killed
+        self.events.append(["dm", victim.id, attacker_id, int(round(amount)), round(victim.x + PW / 2), round(victim.y), 1 if victim.hp <= 0 else 0])
         if victim.hp > 0:
             return
         victim.hp = 0
