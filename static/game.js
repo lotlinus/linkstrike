@@ -400,9 +400,9 @@ function start() {
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeWpn(); });
   // ---- lobby: map preview, weapon strip, capacity and match-time selectors
   const MAP_UI = [
-    { id: "lab", name: "Laboratory", desc: "A reactor chamber with catwalks all around it.", img: "/static/img/map_lab.jpg?v=1" },
-    { id: "street", name: "Lagos Street", desc: "Rooftops, kiosks and a sewer under the road.", img: "/static/img/map_street.jpg?v=2" },
-    { id: "stairs", name: "Staircase", desc: "Stairs, a top corridor, a big hall and a basement with ladders.", img: "/static/img/map_stairs.jpg?v=1" },
+    { id: "lab", name: "Laboratory", desc: "A reactor chamber with catwalks all around it.", img: "/static/img/map_lab.jpg?v=3" },
+    { id: "street", name: "Lagos Street", desc: "Rooftops, kiosks and a sewer under the road.", img: "/static/img/map_street.jpg?v=3" },
+    { id: "stairs", name: "Staircase", desc: "Stairs, a top corridor, a big hall and a basement with ladders.", img: "/static/img/map_stairs.jpg?v=3" },
   ];
   const stepMap = (dir) => {
     if (!isHost || !lobby) return;

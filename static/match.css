@@ -141,9 +141,8 @@
 /* centre: map first, weapons below */
 .rm-main { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; gap: 8px; min-width: 0; min-height: 0; }
 .rm-map { position: relative; min-height: 130px; overflow: hidden; background: #000; border: 2px solid #ff7a1a; box-shadow: 0 0 0 2px #000, 0 0 22px rgba(255, 122, 26, .28); clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px); }
-.rm-map img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transition: transform .7s ease, filter .3s; filter: saturate(1.05) contrast(1.05); }
-.rm-map:hover img { transform: scale(1.045); }
-.rm-map-shade { position: absolute; inset: 0; pointer-events: none; background: linear-gradient(180deg, rgba(0, 0, 0, .35), transparent 28%, transparent 48%, rgba(0, 0, 0, .86)), repeating-linear-gradient(0deg, rgba(0, 0, 0, .16) 0 1px, transparent 1px 3px); }
+.rm-map img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; object-position: center; background: #05070c; }   /* contain: the whole map is always visible, never cropped */
+.rm-map-shade { position: absolute; inset: 0; pointer-events: none; background: linear-gradient(180deg, rgba(0, 0, 0, .8), rgba(0, 0, 0, .35) 22%, transparent 40%); }   /* only the top is shaded (behind the map name); the map itself stays clear */
 .rm-nav { position: absolute; top: 50%; transform: translateY(-50%); width: 38px; height: 58px; display: grid; place-items: center; cursor: pointer; color: #ffb23a; background: rgba(12, 12, 13, .72); border: 2px solid #ff7a1a; transition: background .15s, color .15s, transform .15s, opacity .15s; }
 .rm-nav svg { width: 20px; height: 20px; }
 .rm-nav.l { left: 8px; clip-path: polygon(0 0, 100% 10px, 100% calc(100% - 10px), 0 100%); }
@@ -151,7 +150,7 @@
 .rm-nav:hover:not(:disabled) { background: #ff7a1a; color: #1a0d02; }
 .rm-nav.l:active:not(:disabled) { transform: translateY(-50%) translateX(-2px); } .rm-nav.r:active:not(:disabled) { transform: translateY(-50%) translateX(2px); }
 .rm-nav:disabled { opacity: .28; cursor: default; }
-.rm-map-cap { position: absolute; left: 16px; right: 120px; bottom: 10px; display: grid; gap: 1px; pointer-events: none; text-shadow: 0 2px 6px #000; }
+.rm-map-cap { position: absolute; left: 16px; right: 170px; top: 8px; display: grid; gap: 1px; pointer-events: none; text-shadow: 0 2px 6px #000; }
 .rm-map-cap b { font: 400 clamp(20px, 4.4vh, 30px) var(--display, "Bungee", Impact, sans-serif); letter-spacing: .05em; color: #f2efe8; }
 .rm-map-cap small { font: 600 12px "Chakra Petch", sans-serif; color: #d6d9dc; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rm-dots { position: absolute; right: 14px; bottom: 14px; display: flex; gap: 7px; }
