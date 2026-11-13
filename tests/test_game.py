@@ -359,6 +359,17 @@ def test_duration_choice_and_rematch():
     g.phase = "over"; g.restart(); assert g.phase == "count" and g.time_left == 180 and not g.sudden
     print("durations ok")
 
+def test_damage_event_for_client_feedback():
+    g = new_game(2); g.restart(); skip_count(g)
+    v = g.players[1]; v.invuln = 0; v.hp = 100; g.events.clear()
+    g._damage(v, 22, 0, 3)
+    dm = [e for e in g.events if e[0] == "dm"]
+    assert len(dm) == 1 and dm[0][1:4] == [1, 0, 22] and dm[0][6] == 0
+    g.events.clear(); g._damage(v, 999, 0, 3)
+    dm = [e for e in g.events if e[0] == "dm"]
+    assert dm and dm[0][6] == 1 and any(e[0] == "k" for e in g.events)   # kill flag set, kill event still sent
+    print("damage event ok")
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):
