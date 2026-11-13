@@ -43,6 +43,10 @@ function start() {
   const view = { sc: 1 };
   const pst = new Map();
   const parts = [], expls = [], flashes = [];
+  // immersion: damage numbers, hit markers, streaks, jetpack voices, ambience ducking
+  const floaters = [], marks = [], jets = new Map(), streaks = new Map();
+  let multiN = 0, multiAt = 0, streakTimer = 0, hbAt = 0, hbPulse = 0, lowHp = 0, fdtCur = 1 / 60, duck = 0;
+  let ambKey = "", ambFilter = null;
 
   const socket = io();
   let connectedOnce = false, creating = false;
@@ -52,7 +56,7 @@ function start() {
     for (const id of ["home", "lobby", "game"]) $(id).classList.toggle("active", id === name);
     for (const id of ["roomSheet", "avSheet", "storeSheet", "setSheet", "lbSheet", "helpSheet"]) $(id).hidden = true;   // menu sheets never follow you into a room
     if (name === "game") { resetPads(); startRender(); }
-    else { cancelAnimationFrame(rafId); rafId = 0; }
+    else { cancelAnimationFrame(rafId); rafId = 0; stopJets(); }
     syncAmbient();
   }
 
@@ -355,7 +359,7 @@ function start() {
   $("setVol").oninput = (e) => {
     volume = clamp(Number(e.target.value) / 100, 0, 1);
     try { localStorage.setItem("ls_vol", String(volume)); } catch (err) {}
-    if (ambientG) ambientG.gain.value = 1.8 * volume * musicVol;
+    setAmbVol();
   };
   // ------------------------------------------------------------ lobby
   $("codeBtn").onclick = () => copy(code, "Room name copied");
@@ -497,7 +501,7 @@ function start() {
     renderLobby.scrolled = false;
     socket.emit("leave");
     code = null; world = null; lobby = null; snaps = []; evq = []; latest = null; me = null;
-    pst.clear(); parts.length = 0; expls.length = 0; flashes.length = 0;
+    pst.clear(); parts.length = 0; expls.length = 0; flashes.length = 0; resetFx();
     $("over").hidden = true; $("feed").textContent = "";
     history.replaceState(null, "", "/");
     window.ROOM_CODE = "";
@@ -633,7 +637,7 @@ function start() {
     world = d.world;
     loadArt(world);
     snaps = []; evq = []; latest = null;
-    pst.clear(); parts.length = 0; expls.length = 0; flashes.length = 0;
+    pst.clear(); parts.length = 0; expls.length = 0; flashes.length = 0; resetFx();
     $("over").hidden = true; $("feed").textContent = "";
     phase = "count"; overShown = false; sudden = false; prevPhase = ""; prevSudden = false; lastCountN = 0; goUntil = 0;
     clearFinisher(); finQueued = false; lastKill = null;
@@ -694,7 +698,7 @@ function start() {
       if (!dead && st.dead) { st.hp = p[6]; if (p[0] === me) SFX.respawn(); }
       // footsteps while walking on the ground, a thud when landing from a real fall
       if (!dead && (p[8] & 1)) {
-        if (st.air && st.airVy > 160) SFX.land(p[1], p[2]);
+        if (st.air && st.airVy > 160) { SFX.land(p[1], p[2]); landDust(p[1] + world.pw / 2, p[2] + world.ph, st.airVy); }
         else if (st.lastX != null) {
           st.stepD += Math.abs(p[1] - st.lastX);
           if (st.stepD > 70) { st.stepD = 0; SFX.step(p[1], p[2]); }
@@ -880,17 +884,18 @@ function start() {
     "player_death", "respawn", "kill_confirm", "weapon_pickup", "footstep_metal", "land", "button_click", "button_error",
     "room_created", "player_joined", "player_left", "match_start", "victory", "defeat", "menu_ambient",
     "smg_fire", "rifle_fire", "rifle_heavy_fire", "sniper_fire", "weapon_switch", "reload_pistol", "reload_shotgun", "reload_rocket",
-    "reload_smg", "reload_rifle", "reload_lmg", "reload_sniper"];
+    "reload_smg", "reload_rifle", "reload_lmg", "reload_sniper",
+    "amb_lab", "amb_street", "amb_stairs", "jet_loop", "heartbeat", "hit_tick", "streak_1", "streak_2", "streak_3"];
   let sndLoading = false, ambient = null;
   function loadSounds() {
     const a = ac();
     if (!a || sndLoading) return;
     sndLoading = true;
     for (const n of SND_FILES) {
-      fetch("/static/audio/" + n + ".wav?v=6")
+      fetch("/static/audio/" + n + ".wav?v=7")
         .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject()))
         .then((buf) => new Promise((res, rej) => a.decodeAudioData(buf, res, rej)))
-        .then((b) => { SND[n] = b; if (n === "menu_ambient") syncAmbient(); })
+        .then((b) => { SND[n] = b; if (n === "menu_ambient" || n.indexOf("amb_") === 0) syncAmbient(); })
         .catch(() => {});
     }
   }
@@ -904,18 +909,39 @@ function start() {
     s.connect(g); g.connect(a.destination); s.start();
     return true;
   }
-  // menu ambient: plays on the landing page and lobby, stops during a match or when muted
+  // ambience: menu loop on the landing page and lobby, a per-map bed (amb_lab / amb_street / amb_stairs) during a match
+  function ambWant() {
+    if (!(actx && actx.state === "running" && !muted)) return "";
+    if ($("game").classList.contains("active")) {
+      const n = "amb_" + ((world && world.map) || "lab");
+      return SND[n] ? n : "";
+    }
+    return SND.menu_ambient ? "menu_ambient" : "";
+  }
+  function ambLevel() { return (ambKey === "menu_ambient" ? 1.8 : 1.3) * volume * musicVol; }
+  function setAmbVol() { if (ambientG && actx) ambientG.gain.setTargetAtTime(ambLevel(), actx.currentTime, 0.05); }
   function syncAmbient() {
-    const a = actx;
-    const want = !!(a && a.state === "running" && !muted && SND.menu_ambient && !$("game").classList.contains("active"));
-    if (want && !ambient) {
-      const s = a.createBufferSource(); s.buffer = SND.menu_ambient; s.loop = true;
-      const g = a.createGain(); g.gain.value = 1.8 * volume * musicVol; ambientG = g;
-      s.connect(g); g.connect(a.destination); s.start();
-      ambient = s;
-    } else if (!want && ambient) {
-      try { ambient.stop(); } catch (e) {}
-      ambient = null;
+    const a = actx, want = ambWant();
+    if (want === ambKey) return;
+    if (ambient) { try { ambient.stop(); } catch (e) {} ambient = null; }
+    ambKey = want;
+    if (!want) return;
+    const s = a.createBufferSource(); s.buffer = SND[want]; s.loop = true;
+    const f = a.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = 20000;
+    const g = a.createGain(); g.gain.value = 0;
+    s.connect(f); f.connect(g); g.connect(a.destination); s.start();
+    g.gain.setTargetAtTime(ambLevel(), a.currentTime, 0.6);       // fade in
+    ambientG = g; ambFilter = f; ambient = s;
+  }
+  // every frame: gunfire ducks the bed a little, and the Street goes muffled when you are down in the sewer
+  function updateAmbience(dt, mine) {
+    if (!ambient || ambKey === "menu_ambient" || !actx) return;
+    duck *= Math.pow(0.35, dt);
+    const t = actx.currentTime;
+    ambientG.gain.setTargetAtTime(ambLevel() * (1 - 0.5 * Math.min(1, duck)), t, 0.08);
+    if (world && world.street_row != null && mine) {
+      const under = mine[2] + world.ph / 2 > world.street_row * world.tile + 8;
+      ambFilter.frequency.setTargetAtTime(under ? 650 : 20000, t, 0.25);
     }
   }
   function noise(dur, f0, f1, vol, type) {
@@ -954,6 +980,7 @@ function start() {
   const SFX = {
     shot: (w, x, y) => {
       const v = near(x, y);
+      duck = Math.min(1, duck + 0.12 * v);
       const n = W_SND[w];
       if (n && play(n, 0.55 * v, 0.96 + Math.random() * 0.08)) return;
       if (w === 1) { noise(0.2, 3000, 300, 0.6 * v); tone(140, 45, 0.16, 0.25 * v, "sawtooth"); }
@@ -964,6 +991,7 @@ function start() {
     swap: () => { play("weapon_switch", 0.8); },
     boom: (x, y) => {
       const v = near(x, y);
+      duck = Math.min(1, duck + 0.55 * v);
       if (play("rocket_explosion", 0.75 * v)) return;
       noise(0.9, 900, 60, 0.9 * v); tone(120, 28, 0.6, 0.4 * v, "sawtooth");
     },
@@ -1420,15 +1448,74 @@ function start() {
     });
   }
 
-  function drawJetpack(thrust) {
-    // the jetpack body is hidden until there is a better sprite; only the thrust flame remains
-    if (thrust) {
-      const l = 22 + Math.random() * 14;
-      ctx.fillStyle = "#ff7a1a";
-      ctx.beginPath(); ctx.moveTo(-25, -27); ctx.lineTo(-14, -27); ctx.lineTo(-19.5, -27 + l); ctx.fill();
-      ctx.fillStyle = "#ffe08a";
-      ctx.beginPath(); ctx.moveTo(-23, -27); ctx.lineTo(-16, -27); ctx.lineTo(-19.5, -27 + l * 0.55); ctx.fill();
+  // ---- jetpack thrust: one looping voice per flying player; the longer you hold thrust the higher it climbs
+  function stopJet(id) {
+    const j = jets.get(id); if (!j) return;
+    try { j.s.stop(); j.g.disconnect(); } catch (e) {}
+    jets.delete(id);
+  }
+  function stopJets() { for (const id of Array.from(jets.keys())) stopJet(id); }
+  document.addEventListener("visibilitychange", () => { if (document.hidden) stopJets(); });
+  function updateJets(players, dt) {
+    const a = actx;
+    if (!a || a.state !== "running" || !SND.jet_loop) return;
+    const t = a.currentTime, seen = new Set();
+    for (const p of players) {
+      const id = p[0], on = !!(p[8] & 2) && !(p[8] & 4);
+      let j = jets.get(id);
+      if (!j) {
+        if (!on) continue;
+        const s = a.createBufferSource(); s.buffer = SND.jet_loop; s.loop = true;
+        const g = a.createGain(); g.gain.value = 0;
+        s.connect(g); g.connect(a.destination); s.start();
+        j = { s, g, heat: 0, idle: 0 }; jets.set(id, j);
+      }
+      seen.add(id);
+      j.heat = on ? Math.min(1, j.heat + dt / 1.3) : Math.max(0, j.heat - dt * 1.6);
+      j.idle = on ? 0 : j.idle + dt;
+      const v = id === me ? 1 : near(p[1] + world.pw / 2, p[2]);
+      const target = on && !muted ? (0.26 + 0.2 * j.heat) * v * volume * sfxVol : 0;
+      j.g.gain.setTargetAtTime(target, t, on ? 0.04 : 0.12);
+      j.s.playbackRate.setTargetAtTime(0.82 + 0.62 * j.heat, t, 0.08);
+      if (j.idle > 1.2) stopJet(id);
     }
+    for (const id of Array.from(jets.keys())) if (!seen.has(id)) stopJet(id);
+  }
+
+  // ---- jetpack visuals: embers, a lingering smoke trail, heat haze, and dust kicked up when thrusting off the ground
+  function jetFx(p, st, facing, heat) {
+    const cx = p[1] + world.pw / 2, feet = p[2] + world.ph;
+    const nx = cx - facing * 19.5 * SPR, ny = feet - 27 * SPR;
+    st.tTrail = (st.tTrail || 0) + fdtCur; st.tEmber = (st.tEmber || 0) + fdtCur; st.tHaze = (st.tHaze || 0) + fdtCur; st.tDust = (st.tDust || 0) + fdtCur;
+    const r = () => Math.random() - 0.5;
+    while (st.tTrail > 0.034) { st.tTrail -= 0.034; addPart(nx + r() * 5, ny + 12, -facing * 8 + r() * 26, 50 + Math.random() * 50, 1.1 + Math.random() * 0.5, 7, "#8d96a4", -55, false, 5); }
+    while (st.tEmber > 0.045) { st.tEmber -= 0.045; addPart(nx + r() * 4, ny + 8, r() * 90, 110 + Math.random() * 120, 0.4 + Math.random() * 0.35, 2.4, "#ffb347", 720, false, 2); }
+    while (st.tHaze > 0.07) { st.tHaze -= 0.07; addPart(nx + r() * 6, ny + 22, r() * 14, 10, 0.5, 15 + heat * 6, "#ffd9a0", -110, false, 4); }
+    if (p[8] & 1) {
+      while (st.tDust > 0.04) {
+        st.tDust -= 0.04;
+        for (const d of [-1, 1]) addPart(cx + d * 6, feet - 2, d * (70 + Math.random() * 130), -(6 + Math.random() * 26), 0.45 + Math.random() * 0.4, 8 + Math.random() * 6, "#b8a98f", 10, false, 3);
+      }
+    }
+  }
+  function landDust(x, y, vy) {
+    const n = Math.min(14, 6 + Math.floor(vy / 90));
+    for (let i = 0; i < n; i++) {
+      const d = i % 2 ? 1 : -1;
+      addPart(x + d * 4, y - 2, d * (40 + Math.random() * 130), -(8 + Math.random() * 30), 0.5 + Math.random() * 0.4, 8 + Math.random() * 6, "#b8a98f", 20, false, 3);
+    }
+  }
+
+  function drawJetpack(thrust, heat) {
+    // the jetpack body is hidden until there is a better sprite; only the thrust flame remains
+    if (!thrust) return;
+    const k = 0.8 + 0.45 * (heat || 0), l = (20 + Math.random() * 14) * k, j = (Math.random() - 0.5) * 3;
+    const tri = (x0, x1, len, col) => { ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(x0, -27); ctx.lineTo(x1, -27); ctx.lineTo(-19.5 + j, -27 + len); ctx.fill(); };
+    tri(-26.5, -12.5, l * 1.12, "#ff5a12");
+    tri(-25, -14, l * 0.82, "#ff9a2a");
+    tri(-23.2, -15.8, l * 0.55, "#ffe08a");
+    tri(-21.6, -17.4, l * 0.3, "#fffbe8");
+    ctx.fillStyle = "#8fc0ff"; ctx.beginPath(); ctx.moveTo(-22, -27); ctx.lineTo(-17, -27); ctx.lineTo(-19.5, -27 + l * 0.2); ctx.fill();
   }
 
   function drawSoldier(p, now) {
@@ -1450,11 +1537,13 @@ function start() {
     else if (Math.abs(vx) > 20) { row = 1; idx = Math.floor(now / 140) % cnt[1]; }
     else { row = 0; idx = Math.floor(now / 140) % cnt[0]; }
 
+    if (thrust && !dead) st.jt = Math.min(1.3, (st.jt || 0) + fdtCur); else st.jt = 0;
+    const heat = Math.min(1, (st.jt || 0) / 1.3);
     ctx.save();
     if (flags & 16) ctx.globalAlpha = Math.floor(now / 90) % 2 ? 0.4 : 0.85;
     ctx.translate(Math.round(x + world.pw / 2), Math.round(y + world.ph));
     ctx.scale(facing * SPR, SPR);
-    if (!dead) drawJetpack(thrust);
+    if (!dead) drawJetpack(thrust, heat);
     if (!img) {
       ctx.fillStyle = colorOf(id); ctx.fillRect(-16, -64, 32, 64);
     } else if (whole) {
@@ -1474,8 +1563,15 @@ function start() {
     ctx.restore();
 
     if (dead) return;
-    if (thrust && Math.random() < 0.5) {
-      addPart(x + world.pw / 2 - facing * 14, y + 40, -facing * 20 + (Math.random() - 0.5) * 30, 80 + Math.random() * 60, 0.45, 5, "#9aa4b5", -40, true);
+    if (thrust) {
+      jetFx(p, st, facing, heat);
+      // warm additive glow around the nozzle
+      const gx = x + world.pw / 2 - facing * 19.5 * SPR, gy = y + world.ph - 27 * SPR + 12;
+      ctx.save(); ctx.globalCompositeOperation = "lighter";
+      const gr = ctx.createRadialGradient(gx, gy, 2, gx, gy, 44 + heat * 14);
+      gr.addColorStop(0, "rgba(255,170,70," + (0.5 + 0.15 * heat) + ")"); gr.addColorStop(1, "rgba(255,90,20,0)");
+      ctx.fillStyle = gr; ctx.fillRect(gx - 60, gy - 60, 120, 120);
+      ctx.restore();
     }
     const cx = x + world.pw / 2;
     ctx.textAlign = "center";
@@ -1495,9 +1591,9 @@ function start() {
   }
 
   // ------------------------------------------------------------ effects
-  function addPart(x, y, vx, vy, life, size, color, g, smoke) {
-    if (parts.length > 400) parts.shift();
-    parts.push({ x, y, vx, vy, life, max: life, size, color, g, smoke: !!smoke });
+  function addPart(x, y, vx, vy, life, size, color, g, smoke, kind) {
+    if (parts.length > 650) parts.shift();
+    parts.push({ x, y, vx, vy, life, max: life, size, color, g, smoke: !!smoke, kind: kind || 0 });
   }
   function sparks(x, y, n, color, spd) {
     for (let i = 0; i < n; i++) {
@@ -1524,6 +1620,95 @@ function start() {
     if (b) b.hidden = true;
   }
 
+  // ---- hit feedback: damage numbers + hit markers (the server sends a "dm" event for every hit)
+  function onDamage(victim, attacker, amt, x, y, killed) {
+    const dealt = attacker === me && victim !== me, taken = victim === me;
+    if (!dealt && !taken) return;
+    const f = floaters.find((q) => q.me === taken && q.v === victim && fxMs - q.t0 < 260);   // shotgun pellets / splash merge into one number
+    if (f) { f.amt += amt; f.pop = fxMs; f.kill = f.kill || !!killed; }
+    else floaters.push({ v: victim, me: taken, amt, x, y, t0: fxMs, pop: fxMs, kill: !!killed, dx: (Math.random() - 0.5) * 36 });
+    if (dealt) {
+      marks.push({ x, y: y + 24, t0: fxMs, kill: !!killed });
+      if (!play("hit_tick", killed ? 0.95 : 0.6, killed ? 0.8 : 0.95 + Math.random() * 0.1)) tone(2600, 2100, 0.04, 0.12, "square");
+    }
+  }
+  function drawFeedback(now) {
+    ctx.save();
+    for (let i = marks.length - 1; i >= 0; i--) {
+      const m = marks[i], age = now - m.t0;
+      if (age > 260) { marks.splice(i, 1); continue; }
+      const s = m.kill ? 12 : 7.5, g = 1 + (age / 260) * 0.7, r0 = s * 0.45 * g, r1 = s * g;
+      ctx.globalAlpha = 1 - age / 260; ctx.lineWidth = m.kill ? 3.2 : 2.4; ctx.lineCap = "round";
+      ctx.strokeStyle = m.kill ? "#ff3b30" : "#ffffff";
+      ctx.beginPath();
+      for (const sx of [-1, 1]) for (const sy of [-1, 1]) { ctx.moveTo(m.x + sx * r0, m.y + sy * r0); ctx.lineTo(m.x + sx * r1, m.y + sy * r1); }
+      ctx.stroke();
+    }
+    ctx.textAlign = "center"; ctx.lineJoin = "round";
+    for (let i = floaters.length - 1; i >= 0; i--) {
+      const f = floaters[i], age = (now - f.t0) / 1000, life = f.kill ? 1.1 : 0.85;
+      if (age > life) { floaters.splice(i, 1); continue; }
+      const u = age / life, rise = 48 * (1 - (1 - u) * (1 - u)), pop = Math.max(0, 1 - (now - f.pop) / 150);
+      const base = f.me ? 15 : 15 + Math.min(14, f.amt / 6), sz = (f.kill && !f.me ? base * 1.3 : base) * (1 + 0.35 * pop);
+      ctx.globalAlpha = Math.min(1, (life - age) / 0.3);
+      ctx.font = "800 " + sz.toFixed(1) + "px 'Barlow Semi Condensed', sans-serif";
+      ctx.lineWidth = 4; ctx.strokeStyle = "rgba(10,14,24,.9)";
+      ctx.fillStyle = f.me ? "#ff5a4f" : f.kill ? "#ffa31f" : "#ffffff";
+      const tx = f.x + f.dx * u, ty = f.y - 18 - rise, txt = (f.me ? "-" : "") + Math.round(f.amt);
+      ctx.strokeText(txt, tx, ty); ctx.fillText(txt, tx, ty);
+    }
+    ctx.restore();
+  }
+
+  // ---- kill streaks and multi-kills (tracked from the "k" events every player receives)
+  const MULTI = { 2: ["DOUBLE STRIKE", 1], 3: ["TRIPLE STRIKE", 2], 4: ["QUAD STRIKE", 3], 5: ["MEGA STRIKE", 3] };
+  const SPREE = { 3: ["ON FIRE", 1], 5: ["DOMINATING", 2], 7: ["UNSTOPPABLE", 3], 10: ["LEGENDARY", 3] };
+  function feedNote(id, text) {
+    const row = document.createElement("div"), a = document.createElement("span"), b = document.createElement("span");
+    a.style.color = colorOf(id); a.textContent = nameOf(id); b.textContent = " is " + text;
+    row.append(a, b);
+    const feed = $("feed"); feed.append(row);
+    while (feed.children.length > 4) feed.firstChild.remove();
+    setTimeout(() => row.remove(), 4500);
+  }
+  function showStreak(title, sub, lvl) {
+    let el = $("streakBanner");
+    if (!el) {
+      el = document.createElement("div"); el.id = "streakBanner"; el.className = "streak-banner"; el.hidden = true;
+      el.innerHTML = "<b></b><small></small>"; $("game").append(el);
+    }
+    el.dataset.lvl = String(lvl);
+    el.firstChild.textContent = title; el.lastChild.textContent = sub; el.lastChild.hidden = !sub;
+    el.hidden = false; el.classList.remove("go"); void el.offsetWidth; el.classList.add("go");
+    clearTimeout(streakTimer); streakTimer = setTimeout(() => { el.hidden = true; }, 2300);
+    if (!play("streak_" + lvl, 0.85)) [523, 659, 784, 1046].slice(0, lvl + 1).forEach((f, i) => tone(f, f, 0.14, 0.2, "square", i * 0.09));
+    if (shakeOn) shake = Math.min(16, shake + 2 + lvl * 2);
+  }
+  function onKillStreak(killer, victim) {
+    const ended = streaks.get(victim) || 0;
+    streaks.set(victim, 0);
+    if (victim === me) multiN = 0;
+    if (killer === victim) return;                             // blew yourself up: no credit
+    const n = (streaks.get(killer) || 0) + 1;
+    streaks.set(killer, n);
+    const sp = SPREE[n] || (n > 10 && n % 5 === 0 ? ["LEGENDARY", 3] : null);
+    if (killer !== me) { if (sp) feedNote(killer, sp[0]); return; }
+    const now = performance.now();
+    multiN = now - multiAt < 4000 ? multiN + 1 : 1; multiAt = now;
+    const down = ended >= 3 ? "Ended " + nameOf(victim) + "'s " + ended + "-kill streak" : "";
+    let title = "", sub = "", lvl = 0;
+    if (multiN >= 2) { const m = MULTI[Math.min(multiN, 5)]; title = m[0]; lvl = m[1]; sub = down || (sp ? sp[0] + " \u00b7 " + n + " in a row" : ""); }
+    else if (sp) { title = sp[0]; lvl = sp[1]; sub = down || n + " kills without dying"; }
+    else if (down) { title = "SHUTDOWN"; lvl = 1; sub = down; }
+    if (title) showStreak(title, sub, lvl);
+  }
+
+  function resetFx() {
+    floaters.length = 0; marks.length = 0; streaks.clear(); multiN = 0; multiAt = 0;
+    lowHp = 0; hbAt = 0; hbPulse = 0; duck = 0; stopJets();
+    const el = $("streakBanner"); if (el) el.hidden = true;
+  }
+
   function handleEvent(e) {
     const k = e[0];
     if (k === "sh") {
@@ -1540,8 +1725,11 @@ function start() {
       for (let i = 0; i < 10; i++) addPart(e[1], e[2], (Math.random() - 0.5) * 240, (Math.random() - 0.5) * 240 - 40, 0.9, 10 + Math.random() * 8, "#6b7280", -30, true);
       SFX.boom(e[1], e[2]);
       if (shakeOn) shake = Math.min(16, shake + Math.max(0, 16 - Math.hypot(e[1] - cam.x, e[2] - cam.y) / 60));
+    } else if (k === "dm") {
+      onDamage(e[1], e[2], e[3], e[4], e[5], e[6]);
     } else if (k === "k") {
       feedRow(e[1], e[2], e[3]);
+      onKillStreak(e[1], e[2]);
       lastKill = { killer: e[1], victim: e[2], wpn: e[3] };
       SFX.death(e[2] === me);
       if (e[1] === me && e[2] !== me) SFX.kill();
@@ -1589,12 +1777,25 @@ function start() {
       const p = parts[i];
       p.life -= dt;
       if (p.life <= 0) { parts.splice(i, 1); continue; }
+      if (p.kind >= 3) p.vx *= Math.pow(0.3, dt);          // dust, haze and trail smoke slow down in the air
       p.vy += p.g * dt; p.x += p.vx * dt; p.y += p.vy * dt;
       const a = p.life / p.max;
-      ctx.globalAlpha = p.smoke ? a * 0.55 : a;
-      ctx.fillStyle = p.color;
-      const s = p.smoke ? p.size * (2 - a) : p.size;
-      ctx.fillRect(p.x - s / 2, p.y - s / 2, s, s);
+      if (p.kind === 2) {                                   // ember: additive glowing dot
+        ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = a; ctx.fillStyle = p.color;
+        ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+        ctx.globalCompositeOperation = "source-over";
+      } else if (p.kind >= 3) {                             // soft round puffs
+        const rr = p.kind === 3 ? p.size * (0.7 + (1 - a) * 1.3) : p.kind === 4 ? p.size * (1 + (1 - a) * 0.8) : p.size * (0.6 + (1 - a) * 2.4);
+        ctx.globalAlpha = p.kind === 3 ? a * 0.45 : p.kind === 4 ? a * 0.07 : a * 0.34;
+        if (p.kind === 4) ctx.globalCompositeOperation = "lighter";
+        ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, rr, 0, 6.2832); ctx.fill();
+        if (p.kind === 4) ctx.globalCompositeOperation = "source-over";
+      } else {
+        ctx.globalAlpha = p.smoke ? a * 0.55 : a;
+        ctx.fillStyle = p.color;
+        const s = p.smoke ? p.size * (2 - a) : p.size;
+        ctx.fillRect(p.x - s / 2, p.y - s / 2, s, s);
+      }
     }
     ctx.globalAlpha = 1;
   }
@@ -1671,6 +1872,7 @@ function start() {
     pnow = finisher ? pnow + dt * 1000 * slow : now;
     fxMs += dt * 1000 * slow;
     const fdt = dt * slow;
+    fdtCur = fdt;
 
     while (evq.length && evq[0].due <= pnow) handleEvent(evq.shift().e);
 
@@ -1714,6 +1916,9 @@ function start() {
     drawBullets(cur.bullets);
     for (const p of cur.players) drawSoldier(p, pnow);
     drawEffects(fxMs, fdt);
+    drawFeedback(fxMs);
+    updateJets(cur.players, dt);
+    updateAmbience(dt, mine);
 
     if (hurtFlash > 0.01) {
       ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -1721,6 +1926,21 @@ function start() {
       g.addColorStop(0, "rgba(210,40,40,0)"); g.addColorStop(1, "rgba(210,40,40," + (0.55 * hurtFlash) + ")");
       ctx.fillStyle = g; ctx.fillRect(0, 0, cw, ch);
       hurtFlash *= Math.pow(0.03, dt);
+    }
+    // low health: heartbeat that speeds up as you get weaker, with a vignette that pulses on each beat
+    const hpNow = mine && !(mine[8] & 4) && phase === "play" ? mine[6] : 100;
+    const weak = hpNow <= 30 ? 1 - hpNow / 30 : 0;
+    lowHp += (weak - lowHp) * Math.min(1, dt * 4);
+    if (weak > 0 && now >= hbAt) {
+      if (!play("heartbeat", 0.5 + 0.4 * weak)) { tone(70, 45, 0.12, 0.25, "sine"); tone(62, 42, 0.12, 0.18, "sine", 0.27); }
+      hbAt = now + 1050 - 480 * weak; hbPulse = 1;
+    }
+    hbPulse *= Math.pow(0.02, dt);
+    if (lowHp > 0.02) {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      const g = ctx.createRadialGradient(cw / 2, ch / 2, ch * 0.28, cw / 2, ch / 2, ch * 0.95);
+      g.addColorStop(0, "rgba(40,0,0,0)"); g.addColorStop(1, "rgba(70,0,0," + (lowHp * (0.3 + 0.5 * hbPulse)).toFixed(3) + ")");
+      ctx.fillStyle = g; ctx.fillRect(0, 0, cw, ch);
     }
   }
 
@@ -1780,7 +2000,7 @@ function start() {
   $("setSfx").onchange = () => play("weapon_pickup", 0.8);   // preview
   $("setMusic").oninput = (e) => {
     musicVol = clamp(Number(e.target.value) / 100, 0, 1); store("ls_music", musicVol);
-    if (ambientG) ambientG.gain.value = 1.8 * volume * musicVol;
+    setAmbVol();
   };
   $("setLefty").onclick = () => { lefty = !lefty; store("ls_lefty", lefty ? 1 : 0); applySettings(); syncSettingsUi(); };
   $("setStick").oninput = (e) => { padK = clamp(Number(e.target.value) / 100, 0.7, 1.4); store("ls_padk", padK); applySettings(); };
@@ -1807,7 +2027,7 @@ function start() {
     }
     muted = false; volume = 1; sfxVol = 1; musicVol = 1; lefty = false; padK = 1; padO = 1; fireIdx = 1; shakeOn = true; hudMode = 0;
     $("sndBtn").textContent = "Sound";
-    if (ambientG) ambientG.gain.value = 1.8;
+    setAmbVol();
     syncAmbient(); applySettings(); syncSettingsUi(); syncMenuFace(); renderAvatars();
     toast("Settings reset");
   };

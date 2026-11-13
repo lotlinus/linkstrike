@@ -86,3 +86,32 @@ h2 { letter-spacing: .04em; text-transform: uppercase; color: var(--amber); }
 .ver::before, .ver::after, footer.ver::before, footer.ver::after { background: #ff7a1a !important; opacity: .5; }
 .hud-left { width: 190px; }
 .hud-id .face { width: 44px; height: 44px; }
+
+/* ---- kill streak / multi-kill announcer (built by game.js: showStreak) ---- */
+.streak-banner {
+  position: absolute; left: 50%; top: 24%; z-index: 4; transform: translate(-50%, -50%);
+  display: grid; justify-items: center; gap: 2px; pointer-events: none; text-align: center; white-space: nowrap;
+  --c: #ff7a1a; --glow: rgba(255, 122, 26, .75);
+}
+.streak-banner[hidden] { display: none; }
+.streak-banner[data-lvl="2"] { --c: #ffd25a; --glow: rgba(255, 170, 40, .85); }
+.streak-banner[data-lvl="3"] { --c: #ff4a3d; --glow: rgba(255, 60, 40, .9); }
+.streak-banner b {
+  font: 400 clamp(24px, 6.2vh, 46px) var(--display); letter-spacing: .06em; color: var(--c);
+  text-shadow: 0 0 18px var(--glow), 0 3px 0 rgba(0, 0, 0, .8), 0 0 2px #000;
+}
+.streak-banner small {
+  font: 700 clamp(12px, 2.6vh, 17px) var(--ui); letter-spacing: .12em; text-transform: uppercase; color: #fff;
+  text-shadow: 0 2px 6px #000; padding: 1px 10px; background: rgba(10, 14, 24, .55); border-bottom: 2px solid var(--c);
+}
+.streak-banner small[hidden] { display: none; }
+.streak-banner::before {            /* light streak sweeping behind the title */
+  content: ""; position: absolute; left: -60%; right: -60%; top: 38%; height: 3px; z-index: -1;
+  background: linear-gradient(90deg, transparent, var(--c), transparent); opacity: 0; transform: scaleX(.1);
+}
+.streak-banner.go { animation: stkIn .5s cubic-bezier(.2, 1.5, .4, 1) both, stkOut .35s ease-in 1.95s forwards; }
+.streak-banner.go::before { animation: stkSweep .6s ease-out both; }
+@keyframes stkIn { from { opacity: 0; transform: translate(-50%, -50%) scale(2.1); } to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
+@keyframes stkOut { to { opacity: 0; transform: translate(-50%, -62%) scale(.96); } }
+@keyframes stkSweep { 0% { opacity: .95; transform: scaleX(.1); } 100% { opacity: 0; transform: scaleX(1); } }
+@media (prefers-reduced-motion: reduce) { .streak-banner.go, .streak-banner.go::before { animation: none; } }
